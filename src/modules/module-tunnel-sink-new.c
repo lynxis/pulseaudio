@@ -86,7 +86,13 @@ struct userdata {
 static const char* const valid_modargs[] = {
     "sink_name",
     "sink_properties",
-    "remote_server",
+    "server",
+    "sink", /* unimplemented */
+    "format",
+    "channels",
+    "rate",
+    "channel_map", /* check if this already covered by format/rate implementation */
+    "cookie", /* unimplemented */
     NULL,
 };
 
@@ -395,9 +401,9 @@ int pa__init(pa_module*m) {
         goto fail;
     }
 
-    remote_server = pa_modargs_get_value(ma, "remote_server", NULL);
+    remote_server = pa_modargs_get_value(ma, "server", NULL);
     if (!remote_server) {
-        pa_log("No remote_server given!");
+        pa_log("No server given!");
         goto fail;
     }
 
