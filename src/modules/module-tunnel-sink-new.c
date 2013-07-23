@@ -96,7 +96,7 @@ static const char* const valid_modargs[] = {
     "format",
     "channels",
     "rate",
-    "channel_map", /* check if this already covered by format/rate implementation */
+    "channel_map",
     "cookie", /* unimplemented */
     "reconnect", /* reconnect if server comes back again - unimplemented*/
     NULL,
@@ -180,7 +180,6 @@ static void thread_func(void *userdata) {
                         pa_sink_render(u->sink, writeable, &u->memchunk);
 
                     pa_assert(u->memchunk.length > 0);
-
 
                     /* we have new data to write */
                     p = (const uint8_t *) pa_memblock_acquire(u->memchunk.memblock);
@@ -407,7 +406,6 @@ static void sink_write_volume_callback(pa_sink *s) {
     pa_cvolume hw_vol = s->thread_info.current_hw_volume;
 
     pa_assert(u);
-
 }
 
 static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t offset, pa_memchunk *chunk) {
