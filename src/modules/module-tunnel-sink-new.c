@@ -91,13 +91,14 @@ struct userdata {
     pa_mainloop *rt_mainloop;
 
     const char *remote_server;
+    const char *remote_sink_name;
 };
 
 static const char* const valid_modargs[] = {
     "sink_name",
     "sink_properties",
     "server",
-    "sink", /* unimplemented */
+    "sink",
     "format",
     "channels",
     "rate",
@@ -360,7 +361,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
             pa_stream_connect_playback(u->stream,
-                                       NULL,
+                                       u->remote_sink_name,
                                        &bufferattr,
                                        PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
                                        NULL,
@@ -506,6 +507,8 @@ int pa__init(pa_module*m) {
         pa_log("Failed to create mainloop");
         goto fail;
     }
+
+    u->remote_sink_name = pa_modargs_get_value(ma, "sink", NULL);
 
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
