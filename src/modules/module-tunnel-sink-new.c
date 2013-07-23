@@ -308,8 +308,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                        PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
                                        NULL,
                                        NULL);
-
-            pa_asyncmsgq_post(u->thread_mq.inq, PA_MSGOBJECT(u->sink), SINK_MESSAGE_PASS_SOCKET, NULL, 0, NULL, NULL);
+            u->connected = true;
             break;
         }
         case PA_CONTEXT_FAILED:
@@ -340,7 +339,6 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
     struct userdata *u = PA_SINK(o)->userdata;
 
     switch (code) {
-
         case PA_SINK_MESSAGE_GET_LATENCY: {
             int negative;
             pa_usec_t remote_latency;
@@ -465,7 +463,6 @@ int pa__init(pa_module*m) {
     pa_sink_set_max_request(u->sink, nbytes);
     pa_sink_set_latency_range(u->sink, 0, BLOCK_USEC); */
 
-
     if (!(u->thread = pa_thread_new("tunnelstream-sink", thread_func, u))) {
         pa_log("Failed to create thread.");
         goto fail;
@@ -508,7 +505,6 @@ void pa__done(pa_module*m) {
 
     if(u->remote_server)
         free((void *) u->remote_server);
-
 
     if (u->rtpoll)
         pa_rtpoll_free(u->rtpoll);
