@@ -29,6 +29,7 @@
 #include <pulse/xmalloc.h>
 #include <pulse/stream.h>
 #include <pulse/mainloop.h>
+#include <pulse/introspect.h>
 
 #include <pulsecore/core.h>
 #include <pulsecore/core-util.h>
@@ -56,6 +57,11 @@ PA_MODULE_USAGE(_("sink_name=<name of sink>"));
 /* libpulse callbacks */
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
+static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata);
+/* used for calls we ignore the response */
+static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
+
+static void sink_write_volume_callback(pa_sink *sink);
 
 struct userdata {
     pa_module *module;
@@ -75,6 +81,8 @@ struct userdata {
     // libpulse context
     pa_context *context;
     pa_stream *stream;
+
+    pa_cvolume volume;
 
     bool connected;
 
@@ -231,6 +239,24 @@ finish:
     pa_log_debug("Thread shutting down");
 }
 
+static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+    struct userdata *u = userdata;
+
+    pa_assert(u);
+
+    if(!i)
+        return;
+
+    if(eol < 0) {
+        return;
+    }
+
+    if(i->has_volume) {
+        u->volume = i->volume;
+// send a message to the main loop
+    }
+}
+
 static void stream_state_callback(pa_stream *stream, void *userdata) {
     struct userdata *u = userdata;
 
@@ -258,6 +284,10 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
         default:
             break;
     }
+}
+
+/* active ignoring */
+static void context_ignore_success_callback(pa_context *c, int success, void *userdata) {
 }
 
 static void context_state_callback(pa_context *c, void *userdata) {
@@ -333,6 +363,38 @@ static void context_state_callback(pa_context *c, void *userdata) {
         default:
             break;
     }
+}
+
+static void sink_get_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+
+    pa_assert(u);
+
+    if(!pa_cvolume_equal(&u->volume, &s->real_volume)) {
+        s->real_volume = u->volume;
+        pa_cvolume_set(&s->soft_volume, s->sample_spec.channels, PA_VOLUME_NORM);
+    }
+}
+
+static void sink_set_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+    pa_cvolume hw_vol = s->thread_info.current_hw_volume;
+
+    if(!u->stream)
+        return;
+
+    if(!pa_cvolume_equal(&hw_vol, &u->volume)) {
+        u->volume = hw_vol;
+        pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
+    }
+}
+
+static void sink_write_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+    pa_cvolume hw_vol = s->thread_info.current_hw_volume;
+
+    pa_assert(u);
+
 }
 
 static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t offset, pa_memchunk *chunk) {
@@ -418,6 +480,9 @@ int pa__init(pa_module*m) {
         goto fail;
     }
 
+    pa_cvolume_init(&u->volume);
+    pa_cvolume_reset(&u->volume, ss.channels);
+
     pa_thread_mq_init_rtmainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->rt_mainloop));
 
     /* Create sink */
@@ -455,6 +520,9 @@ int pa__init(pa_module*m) {
     /* set thread queue */
     pa_sink_set_asyncmsgq(u->sink, u->thread_mq.inq);
 
+    pa_sink_set_get_volume_callback(u->sink, sink_get_volume_callback);
+    pa_sink_set_set_volume_callback(u->sink, sink_set_volume_callback);
+    pa_sink_set_write_volume_callback(u->sink, sink_write_volume_callback);
     /* TODO: latency / rewind
     u->sink->update_requested_latency = sink_update_requested_latency_cb;
     u->block_usec = BLOCK_USEC;
