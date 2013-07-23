@@ -69,9 +69,7 @@ struct userdata {
     pa_module *module;
 
     pa_sink *sink;
-    pa_rtpoll *rtpoll;
     pa_thread_mq thread_mq;
-    pa_thread_mq thread_mq_rt_shadow; /* same as thread_mq but has swapped inq/outq and own io_events */
     pa_thread *thread;
 
     pa_memchunk memchunk;
@@ -501,7 +499,6 @@ int pa__init(pa_module*m) {
     m->userdata = u;
     u->remote_server = strdup(remote_server);
     pa_memchunk_reset(&u->memchunk);
-    u->rtpoll = pa_rtpoll_new();
     u->rt_mainloop = pa_mainloop_new();
     if(u->rt_mainloop == NULL) {
         pa_log("Failed to create mainloop");
@@ -601,11 +598,11 @@ void pa__done(pa_module*m) {
 
     pa_thread_mq_done(&u->thread_mq);
 
+    if(u->remote_sink_name)
+        free((void *) u->remote_sink_name);
+
     if(u->remote_server)
         free((void *) u->remote_server);
-
-    if (u->rtpoll)
-        pa_rtpoll_free(u->rtpoll);
 
     if (u->memchunk.memblock)
         pa_memblock_unref(u->memchunk.memblock);
