@@ -29,6 +29,7 @@
 #include <pulse/xmalloc.h>
 #include <pulse/stream.h>
 #include <pulse/mainloop.h>
+#include <pulse/subscribe.h>
 #include <pulse/introspect.h>
 
 #include <pulsecore/core.h>
@@ -57,6 +58,7 @@ PA_MODULE_USAGE(_("sink_name=<name of sink>"));
 /* libpulse callbacks */
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
+static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
 static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata);
 /* used for calls we ignore the response */
 static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
@@ -144,6 +146,7 @@ static void thread_func(void *userdata) {
         goto fail;
     }
 
+    pa_context_set_subscribe_callback(u->context, context_subscribe_callback, u);
     pa_context_set_state_callback(u->context, context_state_callback, u);
     if (pa_context_connect(u->context,
                           u->remote_server,
@@ -253,7 +256,7 @@ static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_
 
     if(i->has_volume) {
         u->volume = i->volume;
-// send a message to the main loop
+        pa_sink_update_volume_and_mute(u->sink);
     }
 }
 
@@ -283,6 +286,28 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
             break;
         default:
             break;
+    }
+}
+
+static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
+    struct userdata *u = userdata;
+
+    pa_assert(userdata);
+
+    switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
+    case PA_SUBSCRIPTION_EVENT_SINK_INPUT: {
+        if(u->stream) {
+            if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
+                if(pa_stream_get_index(u->stream) == idx) {
+                    pa_context_get_sink_input_info(u->context, idx, context_sink_input_info_callback, u);
+                }
+            }
+        }
+        break;
+    }
+    default:
+        /* ignoring event */
+        break;
     }
 }
 
@@ -330,6 +355,8 @@ static void context_state_callback(pa_context *c, void *userdata) {
             bufferattr.minreq = (uint32_t) - 1;
             bufferattr.prebuf = (uint32_t) - 1;
             bufferattr.tlength = (uint32_t) - 1;
+
+            pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SINK_INPUT, NULL, NULL);
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
             pa_stream_connect_playback(u->stream,
