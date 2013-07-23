@@ -67,25 +67,22 @@ static void sink_write_volume_callback(pa_sink *sink);
 
 struct userdata {
     pa_module *module;
-
     pa_sink *sink;
-    pa_thread_mq thread_mq;
     pa_thread *thread;
+    pa_thread_mq thread_mq;
+    pa_mainloop *rt_mainloop;
 
     pa_memchunk memchunk;
 
-    unsigned channels;
-    pa_usec_t block_usec;
-
-    // libpulse context
+    /* libpulse context */
     pa_context *context;
     pa_stream *stream;
 
+    /* volume is applied on the remote server - so we have a hw mixer */
     pa_cvolume volume;
 
     bool connected;
 
-    pa_mainloop *rt_mainloop;
 
     const char *remote_server;
     const char *remote_sink_name;
