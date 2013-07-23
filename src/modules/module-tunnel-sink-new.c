@@ -76,7 +76,6 @@ struct userdata {
 
     unsigned channels;
     pa_usec_t block_usec;
-    pa_usec_t timestamp;
 
     // libpulse context
     pa_context *context;
@@ -125,11 +124,6 @@ static void thread_func(void *userdata) {
 
     pa_thread_mq_install(&u->thread_mq);
 
-
-    u->timestamp = pa_rtclock_now();
-
-
-
     /* TODO: think about volume stuff remote<--stream--source */
     proplist = pa_proplist_new();
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio mod-tunnelstream"));
@@ -161,7 +155,6 @@ static void thread_func(void *userdata) {
     {
         int ret;
         const void *p;
-        pa_usec_t now = 0;
 
         size_t writeable = 0;
 
@@ -175,9 +168,6 @@ static void thread_func(void *userdata) {
 
         if (PA_UNLIKELY(u->sink->thread_info.rewind_requested))
             pa_sink_process_rewind(u->sink, 0);
-
-        if (PA_SINK_IS_OPENED(u->sink->thread_info.state))
-            now = pa_rtclock_now();
 
         if (u->connected &&
                 PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream)) &&
