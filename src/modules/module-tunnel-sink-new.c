@@ -395,10 +395,7 @@ static void sink_set_volume_callback(pa_sink *s) {
     if(!u->stream)
         return;
 
-    if(!pa_cvolume_equal(&hw_vol, &u->volume)) {
-        u->volume = hw_vol;
-        pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
-    }
+    pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
 
 static void sink_write_volume_callback(pa_sink *s) {
