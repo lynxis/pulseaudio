@@ -390,10 +390,11 @@ static void sink_get_volume_callback(pa_sink *s) {
 
 static void sink_set_volume_callback(pa_sink *s) {
     struct userdata *u = s->userdata;
-    pa_cvolume hw_vol = s->thread_info.current_hw_volume;
 
     if(!u->stream)
         return;
+
+    u->volume = s->real_volume;
 
     pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
