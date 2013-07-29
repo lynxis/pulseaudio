@@ -115,7 +115,7 @@ static void thread_func(void *userdata) {
 
     pa_assert(u);
 
-    pa_log_debug("Tunnelstream: Thread starting up");
+    pa_log_debug("Tunnelsink-new: Thread starting up");
 
     rt_mainloop = pa_mainloop_get_api(u->rt_mainloop);
     pa_log("rt_mainloop_api : %p", rt_mainloop );
@@ -124,14 +124,14 @@ static void thread_func(void *userdata) {
 
     /* TODO: think about volume stuff remote<--stream--source */
     proplist = pa_proplist_new();
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio mod-tunnelstream"));
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "mod-tunnelstream");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio module-tunnel-sink-new"));
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "moule-tunnel-sink-new");
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_ICON_NAME, "audio-card");
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
 
     /* init libpulse */
     if (!(u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->rt_mainloop),
-                                              "tunnelstream",
+                                              "module-tunnel-sink-new",
                                               proplist))) {
         pa_log("Failed to create libpulse context");
         goto fail;
@@ -327,7 +327,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
 
             u->stream = pa_stream_new_with_proplist(u->context,
-                                                    "mod-tunnelstream",
+                                                    "module-tunnel-sink-new",
                                                     &u->sink->sample_spec,
                                                     &u->sink->channel_map,
                                                     proplist);
@@ -575,7 +575,7 @@ int pa__init(pa_module*m) {
     pa_sink_set_max_request(u->sink, nbytes);
     pa_sink_set_latency_range(u->sink, 0, BLOCK_USEC); */
 
-    if (!(u->thread = pa_thread_new("tunnelstream-sink", thread_func, u))) {
+    if (!(u->thread = pa_thread_new("module-tunnel-sink-new", thread_func, u))) {
         pa_log("Failed to create thread.");
         goto fail;
     }
