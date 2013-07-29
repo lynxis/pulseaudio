@@ -63,6 +63,7 @@ static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_
 /* used for calls we ignore the response */
 static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
 
+static void sink_update_requested_latency_cb(pa_sink *s);
 static void sink_write_volume_callback(pa_sink *sink);
 
 struct userdata {
@@ -399,6 +400,38 @@ static void sink_set_volume_callback(pa_sink *s) {
     pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
 
+static void sink_update_requested_latency_cb(pa_sink *s) {
+    struct userdata *u;
+    size_t nbytes;
+    pa_usec_t block_usec;
+    pa_buffer_attr bufferattr;
+
+    pa_sink_assert_ref(s);
+    pa_assert_se(u = s->userdata);
+
+    block_usec = pa_sink_get_requested_latency_within_thread(s);
+
+    bufferattr.maxlength = (uint32_t) - 1;
+    bufferattr.minreq = (uint32_t) - 1;
+    bufferattr.prebuf = (uint32_t) - 1;
+    bufferattr.tlength = (uint32_t) - 1;
+
+    if (block_usec == (pa_usec_t) -1)
+        block_usec = s->thread_info.max_latency;
+
+    nbytes = pa_usec_to_bytes(block_usec, &s->sample_spec);
+    pa_sink_set_max_rewind_within_thread(s, nbytes);
+    pa_sink_set_max_request_within_thread(s, nbytes);
+
+    if (block_usec != (pa_usec_t) -1) {
+        bufferattr.tlength = nbytes;
+    }
+
+    if(PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
+        pa_stream_set_buffer_attr(u->stream, &bufferattr, NULL, NULL);
+    }
+}
+
 static void sink_write_volume_callback(pa_sink *s) {
     struct userdata *u = s->userdata;
     pa_cvolume hw_vol = s->thread_info.current_hw_volume;
@@ -524,8 +557,9 @@ int pa__init(pa_module*m) {
     pa_sink_new_data_done(&sink_data);
     u->sink->userdata = u;
 
-    /* callbacks */
+    /* sink callbacks */
     u->sink->parent.process_msg = sink_process_msg_cb;
+    u->sink->update_requested_latency = sink_update_requested_latency_cb;
 
     /* set thread queue */
     pa_sink_set_asyncmsgq(u->sink, u->thread_mq.inq);
