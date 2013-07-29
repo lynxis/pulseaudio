@@ -239,7 +239,7 @@ static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_
         return;
     }
 
-    if(i->has_volume) {
+    if((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
         u->volume = i->volume;
         pa_sink_update_volume_and_mute(u->sink);
     }
