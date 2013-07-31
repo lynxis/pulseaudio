@@ -103,11 +103,6 @@ static const char* const valid_modargs[] = {
     NULL,
 };
 
-enum {
-    SINK_MESSAGE_PASS_SOCKET = PA_SINK_MESSAGE_MAX,
-    SINK_MESSAGE_RIP_SOCKET
-};
-
 static void thread_func(void *userdata) {
     struct userdata *u = userdata;
     pa_proplist *proplist;
@@ -471,10 +466,6 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
                 /* Add the latency from libpulse */
                 remote_latency;
                 /* do we have to add more latency here ? */
-            return 0;
-        }
-        case SINK_MESSAGE_PASS_SOCKET: {
-            u->connected = true;
             return 0;
         }
     }
