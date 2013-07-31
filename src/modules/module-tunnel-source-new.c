@@ -35,7 +35,7 @@
 #include <pulsecore/core.h>
 #include <pulsecore/core-util.h>
 #include <pulsecore/i18n.h>
-#include <pulsecore/sink.h>
+#include <pulsecore/source.h>
 #include <pulsecore/modargs.h>
 #include <pulsecore/log.h>
 #include <pulsecore/thread.h>
@@ -43,15 +43,15 @@
 #include <pulsecore/rtpoll.h>
 #include <pulsecore/poll.h>
 
-#include "module-tunnel-sink-new-symdef.h"
+#include "module-tunnel-source-new-symdef.h"
 
 PA_MODULE_AUTHOR("Alexander Couzens");
-PA_MODULE_DESCRIPTION(_("Create a network sink which connects via a stream to a remote pulseserver"));
+PA_MODULE_DESCRIPTION(_("Create a network source which connects via a stream to a remote pulseserver"));
 PA_MODULE_VERSION(PACKAGE_VERSION);
 PA_MODULE_LOAD_ONCE(false);
-PA_MODULE_USAGE(_("sink_name=<name of sink>"));
+PA_MODULE_USAGE(_("source_name=<name of source>"));
 
-#define DEFAULT_SINK_NAME "remote_sink"
+#define DEFAULT_SINK_NAME "remote_source"
 
 #define MEMBLOCKQ_MAXLENGTH (16*1024*1024)
 
@@ -59,12 +59,12 @@ PA_MODULE_USAGE(_("sink_name=<name of sink>"));
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
 static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
-static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata);
+static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata);
 /* used for calls we ignore the response */
 static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
 
-static void sink_update_requested_latency_cb(pa_sink *s);
-static void sink_write_volume_callback(pa_sink *sink);
+static void source_update_requested_latency_cb(pa_source *s);
+static void source_write_volume_callback(pa_source *source);
 
 struct userdata {
     pa_module *module;
@@ -85,14 +85,14 @@ struct userdata {
     bool connected;
 
     const char *remote_server;
-    const char *remote_sink_name;
+    const char *remote_source_name;
 };
 
 static const char* const valid_modargs[] = {
     "source_name",
     "source_properties",
     "server",
-    "sink",
+    "source",
     "format",
     "channels",
     "rate",
@@ -109,7 +109,7 @@ static void thread_func(void *userdata) {
 
     pa_assert(u);
 
-    pa_log_debug("Tunnelsink-new: Thread starting up");
+    pa_log_debug("Tunnelsource-new: Thread starting up");
 
     rt_mainloop = pa_mainloop_get_api(u->rt_mainloop);
     pa_log("rt_mainloop_api : %p", rt_mainloop );
@@ -118,14 +118,14 @@ static void thread_func(void *userdata) {
 
     /* TODO: think about volume stuff remote<--stream--source */
     proplist = pa_proplist_new();
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio module-tunnel-sink-new"));
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "moule-tunnel-sink-new");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio module-tunnel-source-new"));
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "moule-tunnel-source-new");
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_ICON_NAME, "audio-card");
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
 
     /* init libpulse */
     if (!(u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->rt_mainloop),
-                                              "module-tunnel-sink-new",
+                                              "module-tunnel-source-new",
                                               proplist))) {
         pa_log("Failed to create libpulse context");
         goto fail;
@@ -158,12 +158,12 @@ static void thread_func(void *userdata) {
 
         }
 
-        if (PA_UNLIKELY(u->sink->thread_info.rewind_requested))
-            pa_sink_process_rewind(u->sink, 0);
+        if (PA_UNLIKELY(u->source->thread_info.rewind_requested))
+            pa_source_process_rewind(u->source, 0);
 
         if (u->connected &&
                 PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream)) &&
-                PA_SINK_IS_OPENED(u->sink->thread_info.state)) {
+                PA_SINK_IS_OPENED(u->source->thread_info.state)) {
             /* TODO: use IS_RUNNING + cork stream */
 
             if (pa_stream_is_corked(u->stream)) {
@@ -172,7 +172,7 @@ static void thread_func(void *userdata) {
                 writeable = pa_stream_writable_size(u->stream);
                 if (writeable > 0) {
                     if (u->memchunk.length <= 0)
-                        pa_sink_render(u->sink, writeable, &u->memchunk);
+                        pa_source_render(u->source, writeable, &u->memchunk);
 
                     pa_assert(u->memchunk.length > 0);
 
@@ -222,7 +222,7 @@ finish:
     pa_log_debug("Thread shutting down");
 }
 
-static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata) {
     struct userdata *u = userdata;
 
     pa_assert(u);
@@ -236,7 +236,7 @@ static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_
 
     if((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
         u->volume = i->volume;
-        pa_sink_update_volume_and_mute(u->sink);
+        pa_source_update_volume_and_mute(u->source);
     }
 }
 
@@ -279,7 +279,7 @@ static void context_subscribe_callback(pa_context *c, pa_subscription_event_type
         if(u->stream) {
             if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
                 if(pa_stream_get_index(u->stream) == idx) {
-                    pa_context_get_sink_input_info(u->context, idx, context_sink_input_info_callback, u);
+                    pa_context_get_source_input_info(u->context, idx, context_source_input_info_callback, u);
                 }
             }
         }
@@ -321,9 +321,9 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
 
             u->stream = pa_stream_new_with_proplist(u->context,
-                                                    "module-tunnel-sink-new",
-                                                    &u->sink->sample_spec,
-                                                    &u->sink->channel_map,
+                                                    "module-tunnel-source-new",
+                                                    &u->source->sample_spec,
+                                                    &u->source->channel_map,
                                                     proplist);
 
             pa_proplist_free(proplist);
@@ -340,7 +340,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
             pa_stream_connect_playback(u->stream,
-                                       u->remote_sink_name,
+                                       u->remote_source_name,
                                        &bufferattr,
                                        PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
                                        NULL,
@@ -372,7 +372,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
     }
 }
 
-static void sink_get_volume_callback(pa_sink *s) {
+static void source_get_volume_callback(pa_source *s) {
     struct userdata *u = s->userdata;
 
     pa_assert(u);
@@ -383,7 +383,7 @@ static void sink_get_volume_callback(pa_sink *s) {
     }
 }
 
-static void sink_set_volume_callback(pa_sink *s) {
+static void source_set_volume_callback(pa_source *s) {
     struct userdata *u = s->userdata;
 
     if(!u->stream)
@@ -391,19 +391,19 @@ static void sink_set_volume_callback(pa_sink *s) {
 
     u->volume = s->real_volume;
 
-    pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
+    pa_context_set_source_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
 
-static void sink_update_requested_latency_cb(pa_sink *s) {
+static void source_update_requested_latency_cb(pa_source *s) {
     struct userdata *u;
     size_t nbytes;
     pa_usec_t block_usec;
     pa_buffer_attr bufferattr;
 
-    pa_sink_assert_ref(s);
+    pa_source_assert_ref(s);
     pa_assert_se(u = s->userdata);
 
-    block_usec = pa_sink_get_requested_latency_within_thread(s);
+    block_usec = pa_source_get_requested_latency_within_thread(s);
 
     bufferattr.maxlength = (uint32_t) - 1;
     bufferattr.minreq = (uint32_t) - 1;
@@ -414,8 +414,8 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
         block_usec = s->thread_info.max_latency;
 
     nbytes = pa_usec_to_bytes(block_usec, &s->sample_spec);
-    pa_sink_set_max_rewind_within_thread(s, nbytes);
-    pa_sink_set_max_request_within_thread(s, nbytes);
+    pa_source_set_max_rewind_within_thread(s, nbytes);
+    pa_source_set_max_request_within_thread(s, nbytes);
 
     if (block_usec != (pa_usec_t) -1) {
         bufferattr.tlength = nbytes;
@@ -426,14 +426,14 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
     }
 }
 
-static void sink_write_volume_callback(pa_sink *s) {
+static void source_write_volume_callback(pa_source *s) {
     struct userdata *u = s->userdata;
     pa_cvolume hw_vol = s->thread_info.current_hw_volume;
 
     pa_assert(u);
 }
 
-static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t offset, pa_memchunk *chunk) {
+static int source_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t offset, pa_memchunk *chunk) {
     struct userdata *u = PA_SINK(o)->userdata;
 
     switch (code) {
@@ -441,7 +441,7 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
             int negative;
             pa_usec_t remote_latency;
 
-            if (!PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
+            if (!PA_SINK_IS_LINKED(u->source->thread_info.state)) {
                 *((pa_usec_t*) data) = 0;
                 return 0;
             }
@@ -468,13 +468,13 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
             return 0;
         }
     }
-    return pa_sink_process_msg(o, code, data, offset, chunk);
+    return pa_source_process_msg(o, code, data, offset, chunk);
 }
 
 int pa__init(pa_module*m) {
     struct userdata *u = NULL;
     pa_modargs *ma = NULL;
-    pa_sink_new_data sink_data;
+    pa_source_new_data source_data;
     pa_sample_spec ss;
     pa_channel_map map;
     pa_proplist *proplist = NULL;
@@ -511,66 +511,66 @@ int pa__init(pa_module*m) {
         goto fail;
     }
 
-    u->remote_sink_name = pa_modargs_get_value(ma, "sink", NULL);
+    u->remote_source_name = pa_modargs_get_value(ma, "source", NULL);
 
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
 
     pa_thread_mq_init_rtmainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->rt_mainloop));
 
-    /* Create sink */
-    pa_sink_new_data_init(&sink_data);
-    sink_data.driver = __FILE__;
-    sink_data.module = m;
+    /* Create source */
+    pa_source_new_data_init(&source_data);
+    source_data.driver = __FILE__;
+    source_data.module = m;
 
-    pa_sink_new_data_set_name(&sink_data, pa_modargs_get_value(ma, "sink_name", DEFAULT_SINK_NAME));
-    pa_sink_new_data_set_sample_spec(&sink_data, &ss);
-    pa_sink_new_data_set_channel_map(&sink_data, &map);
+    pa_source_new_data_set_name(&source_data, pa_modargs_get_value(ma, "source_name", DEFAULT_SINK_NAME));
+    pa_source_new_data_set_sample_spec(&source_data, &ss);
+    pa_source_new_data_set_channel_map(&source_data, &map);
 
     /* TODO: set DEVICE CLASS */
-    pa_proplist_sets(sink_data.proplist, PA_PROP_DEVICE_CLASS, "abstract");
+    pa_proplist_sets(source_data.proplist, PA_PROP_DEVICE_CLASS, "abstract");
 
-    pa_proplist_setf(sink_data.proplist, PA_PROP_DEVICE_DESCRIPTION, "tunnel to remote pulseaudio %s", remote_server);
+    pa_proplist_setf(source_data.proplist, PA_PROP_DEVICE_DESCRIPTION, "tunnel to remote pulseaudio %s", remote_server);
 
-    if (pa_modargs_get_proplist(ma, "sink_properties", sink_data.proplist, PA_UPDATE_REPLACE) < 0) {
+    if (pa_modargs_get_proplist(ma, "source_properties", source_data.proplist, PA_UPDATE_REPLACE) < 0) {
         pa_log("Invalid properties");
-        pa_sink_new_data_done(&sink_data);
+        pa_source_new_data_done(&source_data);
         goto fail;
     }
     /* TODO: check PA_SINK_LATENCY + PA_SINK_DYNAMIC_LATENCY */
-    if (!(u->sink = pa_sink_new(m->core, &sink_data, (PA_SINK_LATENCY|PA_SINK_DYNAMIC_LATENCY|PA_SINK_NETWORK)))) {
-        pa_log("Failed to create sink.");
-        pa_sink_new_data_done(&sink_data);
+    if (!(u->source = pa_source_new(m->core, &source_data, (PA_SINK_LATENCY|PA_SINK_DYNAMIC_LATENCY|PA_SINK_NETWORK)))) {
+        pa_log("Failed to create source.");
+        pa_source_new_data_done(&source_data);
         goto fail;
     }
 
-    pa_sink_new_data_done(&sink_data);
-    u->sink->userdata = u;
+    pa_source_new_data_done(&source_data);
+    u->source->userdata = u;
 
-    /* sink callbacks */
-    u->sink->parent.process_msg = sink_process_msg_cb;
-    u->sink->update_requested_latency = sink_update_requested_latency_cb;
+    /* source callbacks */
+    u->source->parent.process_msg = source_process_msg_cb;
+    u->source->update_requested_latency = source_update_requested_latency_cb;
 
     /* set thread queue */
-    pa_sink_set_asyncmsgq(u->sink, u->thread_mq.inq);
+    pa_source_set_asyncmsgq(u->source, u->thread_mq.inq);
 
-    pa_sink_set_get_volume_callback(u->sink, sink_get_volume_callback);
-    pa_sink_set_set_volume_callback(u->sink, sink_set_volume_callback);
-    pa_sink_set_write_volume_callback(u->sink, sink_write_volume_callback);
+    pa_source_set_get_volume_callback(u->source, source_get_volume_callback);
+    pa_source_set_set_volume_callback(u->source, source_set_volume_callback);
+    pa_source_set_write_volume_callback(u->source, source_write_volume_callback);
     /* TODO: latency / rewind
-    u->sink->update_requested_latency = sink_update_requested_latency_cb;
+    u->source->update_requested_latency = source_update_requested_latency_cb;
     u->block_usec = BLOCK_USEC;
-    nbytes = pa_usec_to_bytes(u->block_usec, &u->sink->sample_spec);
-    pa_sink_set_max_rewind(u->sink, nbytes);
-    pa_sink_set_max_request(u->sink, nbytes);
-    pa_sink_set_latency_range(u->sink, 0, BLOCK_USEC); */
+    nbytes = pa_usec_to_bytes(u->block_usec, &u->source->sample_spec);
+    pa_source_set_max_rewind(u->source, nbytes);
+    pa_source_set_max_request(u->source, nbytes);
+    pa_source_set_latency_range(u->source, 0, BLOCK_USEC); */
 
-    if (!(u->thread = pa_thread_new("module-tunnel-sink-new", thread_func, u))) {
+    if (!(u->thread = pa_thread_new("module-tunnel-source-new", thread_func, u))) {
         pa_log("Failed to create thread.");
         goto fail;
     }
 
-    pa_sink_put(u->sink);
+    pa_source_put(u->source);
     pa_modargs_free(ma);
 
     return 0;
@@ -595,8 +595,8 @@ void pa__done(pa_module*m) {
     if (!(u = m->userdata))
         return;
 
-    if (u->sink)
-        pa_sink_unlink(u->sink);
+    if (u->source)
+        pa_source_unlink(u->source);
 
     if (u->thread) {
         pa_asyncmsgq_send(u->thread_mq.inq, NULL, PA_MESSAGE_SHUTDOWN, NULL, 0, NULL);
@@ -605,8 +605,8 @@ void pa__done(pa_module*m) {
 
     pa_thread_mq_done(&u->thread_mq);
 
-    if(u->remote_sink_name)
-        free((void *) u->remote_sink_name);
+    if(u->remote_source_name)
+        free((void *) u->remote_source_name);
 
     if(u->remote_server)
         free((void *) u->remote_server);
@@ -614,8 +614,8 @@ void pa__done(pa_module*m) {
     if (u->memchunk.memblock)
         pa_memblock_unref(u->memchunk.memblock);
 
-    if (u->sink)
-        pa_sink_unref(u->sink);
+    if (u->source)
+        pa_source_unref(u->source);
 
     pa_xfree(u);
 }
