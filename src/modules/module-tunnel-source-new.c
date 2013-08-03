@@ -59,7 +59,7 @@ PA_MODULE_USAGE(_("source_name=<name of source>"));
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
 static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
-static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata);
+//static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata);
 /* used for calls we ignore the response */
 static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
 
@@ -146,9 +146,9 @@ static void thread_func(void *userdata) {
     for(;;)
     {
         int ret;
-        const void *p;
+        void **p;
 
-        size_t writeable = 0;
+        size_t readable = 0;
 
         if(pa_mainloop_iterate(u->rt_mainloop, 1, &ret) < 0) {
             if(ret == 0)
@@ -158,34 +158,35 @@ static void thread_func(void *userdata) {
 
         }
 
-        if (PA_UNLIKELY(u->source->thread_info.rewind_requested))
-            pa_source_process_rewind(u->source, 0);
+//        if (PA_UNLIKELY(u->source->thread_info.rewind_requested))
+//            pa_source_process_rewind(u->source, 0);
 
         if (u->connected &&
                 PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream)) &&
-                PA_SINK_IS_OPENED(u->source->thread_info.state)) {
+                PA_SOURCE_IS_OPENED(u->source->thread_info.state)) {
             /* TODO: use IS_RUNNING + cork stream */
 
             if (pa_stream_is_corked(u->stream)) {
                 pa_stream_cork(u->stream, 0, NULL, NULL);
             } else {
-                writeable = pa_stream_writable_size(u->stream);
-                if (writeable > 0) {
-                    if (u->memchunk.length <= 0)
-                        pa_source_render(u->source, writeable, &u->memchunk);
+                readable = pa_stream_readable_size(u->stream);
+                if (readable > 0) {
+                    if (u->memchunk.length <= 0) {
+                        //                        pa_source_render(u->source, writeable, &u->memchunk);
+                    }
 
                     pa_assert(u->memchunk.length > 0);
 
                     /* we have new data to write */
-                    p = (const uint8_t *) pa_memblock_acquire(u->memchunk.memblock);
-                    ret = pa_stream_write(u->stream,
-                                        ((uint8_t*) p + u->memchunk.index),         /**< The data to write */
-                                        u->memchunk.length,            /**< The length of the data to write in bytes */
-                                        NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
-                                        0,          /**< Offset for seeking, must be 0 for upload streams */
-                                        PA_SEEK_RELATIVE      /**< Seek mode, must be PA_SEEK_RELATIVE for upload streams */
-                                        );
-                    pa_memblock_release(u->memchunk.memblock);
+                    memchunk.memblock = pa_memblock_new(u->core->mempool, len);
+                    pa_assert(memchunk.memblock);
+
+                    p = pa_memblock_acquire(memchunk.memblock);
+                    r = pa_stream_peek(u->stream, p, len);
+//                    pa_memblock_release(memchunk.memblock);
+
+                    if(r == 0)
+
                     pa_memblock_unref(u->memchunk.memblock);
                     pa_memchunk_reset(&u->memchunk);
 
@@ -222,7 +223,7 @@ finish:
     pa_log_debug("Thread shutting down");
 }
 
-static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata) {
+/*static void context_source_input_info_callback(pa_context *c, const pa_source_input_info *i, int eol, void *userdata) {
     struct userdata *u = userdata;
 
     pa_assert(u);
@@ -238,7 +239,7 @@ static void context_source_input_info_callback(pa_context *c, const pa_source_in
         u->volume = i->volume;
         pa_source_update_volume_and_mute(u->source);
     }
-}
+} */
 
 static void stream_state_callback(pa_stream *stream, void *userdata) {
     struct userdata *u = userdata;
@@ -275,11 +276,11 @@ static void context_subscribe_callback(pa_context *c, pa_subscription_event_type
     pa_assert(userdata);
 
     switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
-    case PA_SUBSCRIPTION_EVENT_SINK_INPUT: {
+    case PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT: {
         if(u->stream) {
             if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
                 if(pa_stream_get_index(u->stream) == idx) {
-                    pa_context_get_source_input_info(u->context, idx, context_source_input_info_callback, u);
+//                    pa_context_get_source_input_info(u->context, idx, context_source_input_info_callback, u);
                 }
             }
         }
@@ -336,15 +337,10 @@ static void context_state_callback(pa_context *c, void *userdata) {
             bufferattr.prebuf = (uint32_t) - 1;
             bufferattr.tlength = (uint32_t) - 1;
 
-            pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SINK_INPUT, NULL, NULL);
+            pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT, NULL, NULL);
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
-            pa_stream_connect_playback(u->stream,
-                                       u->remote_source_name,
-                                       &bufferattr,
-                                       PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
-                                       NULL,
-                                       NULL);
+            pa_stream_connect_record(u->stream, u->remote_source_name, &bufferattr, PA_STREAM_AUTO_TIMING_UPDATE);
             u->connected = true;
             break;
         }
@@ -391,7 +387,7 @@ static void source_set_volume_callback(pa_source *s) {
 
     u->volume = s->real_volume;
 
-    pa_context_set_source_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
+//    pa_context_set_source_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
 
 static void source_update_requested_latency_cb(pa_source *s) {
@@ -414,8 +410,6 @@ static void source_update_requested_latency_cb(pa_source *s) {
         block_usec = s->thread_info.max_latency;
 
     nbytes = pa_usec_to_bytes(block_usec, &s->sample_spec);
-    pa_source_set_max_rewind_within_thread(s, nbytes);
-    pa_source_set_max_request_within_thread(s, nbytes);
 
     if (block_usec != (pa_usec_t) -1) {
         bufferattr.tlength = nbytes;
