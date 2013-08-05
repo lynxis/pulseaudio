@@ -40,7 +40,6 @@
 #include <pulsecore/log.h>
 #include <pulsecore/thread.h>
 #include <pulsecore/thread-mq.h>
-#include <pulsecore/rtpoll.h>
 #include <pulsecore/poll.h>
 
 #include "module-tunnel-sink-new-symdef.h"
