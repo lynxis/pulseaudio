@@ -46,10 +46,19 @@
 #include "module-tunnel-sink-new-symdef.h"
 
 PA_MODULE_AUTHOR("Alexander Couzens");
-PA_MODULE_DESCRIPTION(_("Create a network sink which connects via a stream to a remote pulseserver"));
+PA_MODULE_DESCRIPTION("Create a network sink which connects via a stream to a remote PulseAudio server");
 PA_MODULE_VERSION(PACKAGE_VERSION);
 PA_MODULE_LOAD_ONCE(false);
-PA_MODULE_USAGE(_("sink_name=<name of sink>"));
+PA_MODULE_USAGE(
+        "server=<address> "
+        "sink=<name of the remote sink> "
+        "sink_name=<name for the local sink> "
+        "sink_properties=<properties for the local sink> "
+        "format=<sample format> "
+        "channels=<number of channels> "
+        "rate=<sample rate> "
+        "channel_map=<channel map>"
+        );
 
 #define DEFAULT_SINK_NAME "remote_sink"
 
