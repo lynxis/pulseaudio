@@ -476,7 +476,6 @@ int pa__init(pa_module *m) {
     pa_sink_new_data sink_data;
     pa_sample_spec ss;
     pa_channel_map map;
-    pa_proplist *proplist = NULL;
     const char *remote_server = NULL;
     const char *sink_name = NULL;
     char *default_sink_name = NULL;
@@ -587,9 +586,6 @@ fail:
 
     if (default_sink_name)
         pa_xfree(default_sink_name);
-
-    if (proplist)
-        pa_proplist_free(proplist);
 
     pa__done(m);
 
