@@ -167,7 +167,7 @@ static void thread_func(void *userdata) {
             /* TODO: use IS_RUNNING + cork stream */
 
             if (pa_stream_is_corked(u->stream)) {
-                pa_operation_unref(pa_stream_cork(u->stream, 0, NULL, NULL));
+                pa_stream_cork(u->stream, 0, NULL, NULL);
             } else {
                 writable = pa_stream_writable_size(u->stream);
                 if (writable > 0) {
