@@ -1643,7 +1643,6 @@ module_match_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_match_la_LIBADD = $(MODULE_LIBADD)
 
 module_tunnel_sink_new_la_SOURCES = modules/module-tunnel-sink-new.c
-module_tunnel_sink_new_la_CFLAGS = -DTUNNEL_SINK_NEW=1 $(AM_CFLAGS)
 module_tunnel_sink_new_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_tunnel_sink_new_la_LIBADD = $(MODULE_LIBADD)
 
