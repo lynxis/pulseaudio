@@ -40,7 +40,6 @@ static void asyncmsgq_read_cb(pa_mainloop_api *api, pa_io_event *e, int fd, pa_i
     pa_thread_mq *q = userdata;
     pa_asyncmsgq *aq;
 
-    pa_assert(pa_asyncmsgq_read_fd(q->outq) == fd);
     pa_assert(events == PA_IO_EVENT_INPUT);
 
     if (pa_asyncmsgq_read_fd(q->outq) == fd)
