@@ -527,10 +527,12 @@ int pa__init(pa_module *m) {
     pa_sink_new_data_set_sample_spec(&sink_data, &ss);
     pa_sink_new_data_set_channel_map(&sink_data, &map);
 
-    /* TODO: set DEVICE CLASS */
-    pa_proplist_sets(sink_data.proplist, PA_PROP_DEVICE_CLASS, "abstract");
-
-    pa_proplist_setf(sink_data.proplist, PA_PROP_DEVICE_DESCRIPTION, "tunnel to remote pulseaudio %s", remote_server);
+    pa_proplist_sets(sink_data.proplist, PA_PROP_DEVICE_CLASS, "sound");
+    pa_proplist_setf(sink_data.proplist,
+                     PA_PROP_DEVICE_DESCRIPTION,
+                     _("Tunnel to %s/%s"),
+                     remote_server,
+                     pa_strempty(u->remote_sink_name));
 
     if (pa_modargs_get_proplist(ma, "sink_properties", sink_data.proplist, PA_UPDATE_REPLACE) < 0) {
         pa_log("Invalid properties");
@@ -565,7 +567,7 @@ int pa__init(pa_module *m) {
     pa_sink_set_max_request(u->sink, nbytes);
     pa_sink_set_latency_range(u->sink, 0, BLOCK_USEC); */
 
-    if (!(u->thread = pa_thread_new("module-tunnel-sink-new", thread_func, u))) {
+    if (!(u->thread = pa_thread_new("tunnel-sink", thread_func, u))) {
         pa_log("Failed to create thread.");
         goto fail;
     }
