@@ -60,8 +60,6 @@ PA_MODULE_USAGE(
         "channel_map=<channel map>"
         );
 
-#define MEMBLOCKQ_MAXLENGTH (16*1024*1024)
-
 /* libpulse callbacks */
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
@@ -90,7 +88,6 @@ struct userdata {
     pa_cvolume volume;
 
     bool connected;
-
 
     const char *remote_server;
     const char *remote_sink_name;
@@ -479,7 +476,7 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
     return pa_sink_process_msg(o, code, data, offset, chunk);
 }
 
-int pa__init(pa_module*m) {
+int pa__init(pa_module *m) {
     struct userdata *u = NULL;
     pa_modargs *ma = NULL;
     pa_sink_new_data sink_data;
@@ -600,7 +597,7 @@ fail:
     return -1;
 }
 
-void pa__done(pa_module*m) {
+void pa__done(pa_module *m) {
     struct userdata *u;
 
     pa_assert(m);
