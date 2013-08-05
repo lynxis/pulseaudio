@@ -75,7 +75,7 @@ struct userdata {
     pa_sink *sink;
     pa_thread *thread;
     pa_thread_mq thread_mq;
-    pa_mainloop *rt_mainloop;
+    pa_mainloop *thread_mainloop;
 
     pa_memchunk memchunk;
 
@@ -115,7 +115,7 @@ static void thread_func(void *userdata) {
 
     pa_log_debug("Tunnelsink-new: Thread starting up");
 
-    rt_mainloop = pa_mainloop_get_api(u->rt_mainloop);
+    rt_mainloop = pa_mainloop_get_api(u->thread_mainloop);
     pa_log("rt_mainloop_api : %p", rt_mainloop );
 
     pa_thread_mq_install(&u->thread_mq);
@@ -128,7 +128,7 @@ static void thread_func(void *userdata) {
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
 
     /* init libpulse */
-    if (!(u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->rt_mainloop),
+    if (!(u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
                                               "module-tunnel-sink-new",
                                               proplist))) {
         pa_log("Failed to create libpulse context");
@@ -154,7 +154,7 @@ static void thread_func(void *userdata) {
 
         size_t writeable = 0;
 
-        if(pa_mainloop_iterate(u->rt_mainloop, 1, &ret) < 0) {
+        if(pa_mainloop_iterate(u->thread_mainloop, 1, &ret) < 0) {
             if(ret == 0)
                 goto finish;
             else
@@ -220,8 +220,8 @@ finish:
     if (u->context)
         pa_context_disconnect(u->context);
 
-    if(u->rt_mainloop)
-        pa_mainloop_free(u->rt_mainloop);
+    if(u->thread_mainloop)
+        pa_mainloop_free(u->thread_mainloop);
 
     pa_log_debug("Thread shutting down");
 }
@@ -510,8 +510,8 @@ int pa__init(pa_module *m) {
     m->userdata = u;
     u->remote_server = strdup(remote_server);
     pa_memchunk_reset(&u->memchunk);
-    u->rt_mainloop = pa_mainloop_new();
-    if(u->rt_mainloop == NULL) {
+    u->thread_mainloop = pa_mainloop_new();
+    if(u->thread_mainloop == NULL) {
         pa_log("Failed to create mainloop");
         goto fail;
     }
@@ -521,7 +521,7 @@ int pa__init(pa_module *m) {
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
 
-    pa_thread_mq_init_thread_mainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->rt_mainloop));
+    pa_thread_mq_init_thread_mainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->thread_mainloop));
 
     /* Create sink */
     pa_sink_new_data_init(&sink_data);
