@@ -322,8 +322,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                                     proplist);
             pa_proplist_free(proplist);
 
-            memset(&bufferattr, 0, sizeof(pa_buffer_attr));
-
+            pa_zero(bufferattr);
             bufferattr.maxlength = (uint32_t) -1;
             bufferattr.minreq = (uint32_t) -1;
             bufferattr.prebuf = (uint32_t) -1;
