@@ -83,7 +83,7 @@ struct userdata {
     pa_context *context;
     pa_stream *stream;
 
-    /* volume is applied on the remote server - so we have a hw mixer */
+    /* volume is applied on the remote server - this is similiar to a hw mixer */
     pa_cvolume volume;
 
     bool connected;
@@ -320,7 +320,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                                     &u->sink->sample_spec,
                                                     &u->sink->channel_map,
                                                     proplist);
-
             pa_proplist_free(proplist);
 
             memset(&bufferattr, 0, sizeof(pa_buffer_attr));
@@ -333,12 +332,12 @@ static void context_state_callback(pa_context *c, void *userdata) {
             pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SINK_INPUT, NULL, NULL);
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
-            if(pa_stream_connect_playback(u->stream,
-                                       u->remote_sink_name,
-                                       &bufferattr,
-                                       PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
-                                       NULL,
-                                       NULL) < 0) {
+            if (pa_stream_connect_playback(u->stream,
+                                           u->remote_sink_name,
+                                           &bufferattr,
+                                           PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
+                                           NULL,
+                                           NULL) < 0) {
                 /* failed */
             }
             u->connected = true;
