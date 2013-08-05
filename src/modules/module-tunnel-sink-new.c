@@ -24,7 +24,6 @@
 #endif
 
 #include <pulse/context.h>
-#include <pulse/rtclock.h>
 #include <pulse/timeval.h>
 #include <pulse/xmalloc.h>
 #include <pulse/stream.h>
@@ -41,6 +40,7 @@
 #include <pulsecore/thread.h>
 #include <pulsecore/thread-mq.h>
 #include <pulsecore/poll.h>
+#include <pulsecore/proplist-util.h>
 
 #include "module-tunnel-sink-new-symdef.h"
 
@@ -109,28 +109,25 @@ static const char* const valid_modargs[] = {
 static void thread_func(void *userdata) {
     struct userdata *u = userdata;
     pa_proplist *proplist;
-    pa_mainloop_api *rt_mainloop;
 
     pa_assert(u);
 
-    pa_log_debug("Tunnelsink-new: Thread starting up");
-
-    rt_mainloop = pa_mainloop_get_api(u->thread_mainloop);
-    pa_log("rt_mainloop_api : %p", rt_mainloop );
-
+    pa_log_debug("Thread starting up");
     pa_thread_mq_install(&u->thread_mq);
 
-    /* TODO: think about volume stuff remote<--stream--source */
     proplist = pa_proplist_new();
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, _("PulseAudio module-tunnel-sink-new"));
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "moule-tunnel-sink-new");
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ICON_NAME, "audio-card");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, "PulseAudio");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "org.PulseAudio.PulseAudio");
     pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
+    pa_init_proplist(proplist);
 
     /* init libpulse */
-    if (!(u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
-                                              "module-tunnel-sink-new",
-                                              proplist))) {
+    u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
+                                                  "module-tunnel-sink-new",
+                                                  proplist);
+    pa_proplist_free(proplist);
+
+    if (!u->context) {
         pa_log("Failed to create libpulse context");
         goto fail;
     }
@@ -144,8 +141,6 @@ static void thread_func(void *userdata) {
         pa_log("Failed to connect libpulse context");
         goto fail;
     }
-
-    pa_proplist_free(proplist);
 
     for(;;)
     {
