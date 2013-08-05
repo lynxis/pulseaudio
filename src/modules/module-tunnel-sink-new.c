@@ -146,7 +146,7 @@ static void thread_func(void *userdata) {
         int ret;
         const void *p;
 
-        size_t writeable = 0;
+        size_t writable = 0;
 
         if (pa_mainloop_iterate(u->thread_mainloop, 1, &ret) < 0) {
             if (ret == 0)
@@ -166,10 +166,10 @@ static void thread_func(void *userdata) {
             if (pa_stream_is_corked(u->stream)) {
                 pa_stream_cork(u->stream, 0, NULL, NULL);
             } else {
-                writeable = pa_stream_writable_size(u->stream);
-                if (writeable > 0) {
+                writable = pa_stream_writable_size(u->stream);
+                if (writable > 0) {
                     if (u->memchunk.length <= 0)
-                        pa_sink_render(u->sink, writeable, &u->memchunk);
+                        pa_sink_render(u->sink, writable, &u->memchunk);
 
                     pa_assert(u->memchunk.length > 0);
 
