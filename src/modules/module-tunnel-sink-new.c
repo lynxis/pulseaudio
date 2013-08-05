@@ -163,7 +163,7 @@ static void thread_func(void *userdata) {
 
         if (u->connected &&
                 PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream)) &&
-                PA_SINK_IS_OPENED(u->sink->thread_info.state)) {
+                PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
             /* TODO: use IS_RUNNING + cork stream */
 
             if (pa_stream_is_corked(u->stream)) {
