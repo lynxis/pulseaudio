@@ -36,14 +36,22 @@
 
 PA_STATIC_TLS_DECLARE_NO_FREE(thread_mq);
 
-static void asyncmsgq_read_inq_cb(pa_mainloop_api *api, pa_io_event *e, int fd, pa_io_event_flags_t events, void *userdata) {
+static void asyncmsgq_read_cb(pa_mainloop_api *api, pa_io_event *e, int fd, pa_io_event_flags_t events, void *userdata) {
     pa_thread_mq *q = userdata;
     pa_asyncmsgq *aq;
 
-    pa_assert(pa_asyncmsgq_read_fd(q->inq) == fd);
+    pa_assert(pa_asyncmsgq_read_fd(q->outq) == fd);
     pa_assert(events == PA_IO_EVENT_INPUT);
 
-    pa_asyncmsgq_ref(aq = q->inq);
+    if (pa_asyncmsgq_read_fd(q->outq) == fd)
+        pa_asyncmsgq_ref(aq = q->outq);
+    else if (pa_asyncmsgq_read_fd(q->inq))
+        pa_asyncmsgq_ref(aq = q->inq);
+    else {
+        pa_assert(false);
+        return;
+    }
+
     pa_asyncmsgq_read_after_poll(aq);
 
     for (;;) {
@@ -62,38 +70,6 @@ static void asyncmsgq_read_inq_cb(pa_mainloop_api *api, pa_io_event *e, int fd, 
                 api->quit(api, 0);
                 break;
             }
-
-            ret = pa_asyncmsgq_dispatch(object, code, data, offset, &chunk);
-            pa_asyncmsgq_done(aq, ret);
-        }
-
-        if (pa_asyncmsgq_read_before_poll(aq) == 0)
-            break;
-    }
-
-    pa_asyncmsgq_unref(aq);
-}
-
-static void asyncmsgq_read_outq_cb(pa_mainloop_api *api, pa_io_event *e, int fd, pa_io_event_flags_t events, void *userdata) {
-    pa_thread_mq *q = userdata;
-    pa_asyncmsgq *aq;
-
-    pa_assert(pa_asyncmsgq_read_fd(q->outq) == fd);
-    pa_assert(events == PA_IO_EVENT_INPUT);
-
-    pa_asyncmsgq_ref(aq = q->outq);
-    pa_asyncmsgq_read_after_poll(aq);
-
-    for (;;) {
-        pa_msgobject *object;
-        int code;
-        void *data;
-        int64_t offset;
-        pa_memchunk chunk;
-
-        /* Check whether there is a message for us to process */
-        while (pa_asyncmsgq_get(aq, &object, &code, &data, &offset, &chunk, 0) >= 0) {
-            int ret;
 
             ret = pa_asyncmsgq_dispatch(object, code, data, offset, &chunk);
             pa_asyncmsgq_done(aq, ret);
@@ -138,12 +114,12 @@ void pa_thread_mq_init_thread_mainloop(pa_thread_mq *q, pa_mainloop_api *main_ma
 
     pa_assert_se(pa_asyncmsgq_read_before_poll(q->outq) == 0);
     pa_asyncmsgq_write_before_poll(q->outq);
-    pa_assert_se(q->read_main_event = main_mainloop->io_new(main_mainloop, pa_asyncmsgq_read_fd(q->outq), PA_IO_EVENT_INPUT, asyncmsgq_read_outq_cb, q));
+    pa_assert_se(q->read_main_event = main_mainloop->io_new(main_mainloop, pa_asyncmsgq_read_fd(q->outq), PA_IO_EVENT_INPUT, asyncmsgq_read_cb, q));
     pa_assert_se(q->write_thread_event = main_mainloop->io_new(thread_mainloop, pa_asyncmsgq_write_fd(q->outq), PA_IO_EVENT_INPUT, asyncmsgq_write_outq_cb, q));
 
     pa_asyncmsgq_read_before_poll(q->inq);
     pa_asyncmsgq_write_before_poll(q->inq);
-    pa_assert_se(q->read_thread_event = thread_mainloop->io_new(thread_mainloop, pa_asyncmsgq_read_fd(q->inq), PA_IO_EVENT_INPUT, asyncmsgq_read_inq_cb, q));
+    pa_assert_se(q->read_thread_event = thread_mainloop->io_new(thread_mainloop, pa_asyncmsgq_read_fd(q->inq), PA_IO_EVENT_INPUT, asyncmsgq_read_cb, q));
     pa_assert_se(q->write_main_event = main_mainloop->io_new(main_mainloop, pa_asyncmsgq_write_fd(q->inq), PA_IO_EVENT_INPUT, asyncmsgq_write_inq_cb, q));
 }
 
@@ -156,7 +132,7 @@ void pa_thread_mq_init(pa_thread_mq *q, pa_mainloop_api *mainloop, pa_rtpoll *rt
     pa_assert_se(q->outq = pa_asyncmsgq_new(0));
 
     pa_assert_se(pa_asyncmsgq_read_before_poll(q->outq) == 0);
-    pa_assert_se(q->read_main_event = mainloop->io_new(mainloop, pa_asyncmsgq_read_fd(q->outq), PA_IO_EVENT_INPUT, asyncmsgq_read_outq_cb, q));
+    pa_assert_se(q->read_main_event = mainloop->io_new(mainloop, pa_asyncmsgq_read_fd(q->outq), PA_IO_EVENT_INPUT, asyncmsgq_read_cb, q));
 
     pa_asyncmsgq_write_before_poll(q->inq);
     pa_assert_se(q->write_main_event = mainloop->io_new(mainloop, pa_asyncmsgq_write_fd(q->inq), PA_IO_EVENT_INPUT, asyncmsgq_write_inq_cb, q));
