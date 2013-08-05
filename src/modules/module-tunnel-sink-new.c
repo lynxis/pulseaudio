@@ -112,7 +112,10 @@ static void thread_func(void *userdata) {
 
     pa_assert(u);
 
+    pa_memchunk_reset(&u->memchunk);
+
     pa_log_debug("Thread starting up");
+
     pa_thread_mq_install(&u->thread_mq);
 
     proplist = pa_proplist_new();
@@ -206,6 +209,9 @@ fail:
 
 finish:
     pa_asyncmsgq_flush(u->thread_mq.inq, false);
+
+    if (u->memchunk.memblock)
+        pa_memblock_unref(u->memchunk.memblock);
 
     if (u->stream)
         pa_stream_disconnect(u->stream);
@@ -499,7 +505,6 @@ int pa__init(pa_module *m) {
     u->module = m;
     m->userdata = u;
     u->remote_server = pa_xstrdup(remote_server);
-    pa_memchunk_reset(&u->memchunk);
     u->thread_mainloop = pa_mainloop_new();
     if (u->thread_mainloop == NULL) {
         pa_log("Failed to create mainloop");
@@ -614,9 +619,6 @@ void pa__done(pa_module *m) {
 
     if (u->remote_server)
         pa_xfree(u->remote_server);
-
-    if (u->memchunk.memblock)
-        pa_memblock_unref(u->memchunk.memblock);
 
     if (u->sink)
         pa_sink_unref(u->sink);
