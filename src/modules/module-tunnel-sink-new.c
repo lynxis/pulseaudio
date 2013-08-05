@@ -60,8 +60,6 @@ PA_MODULE_USAGE(
         "channel_map=<channel map>"
         );
 
-#define DEFAULT_SINK_NAME "remote_sink"
-
 #define MEMBLOCKQ_MAXLENGTH (16*1024*1024)
 
 /* libpulse callbacks */
@@ -489,6 +487,7 @@ int pa__init(pa_module*m) {
     pa_channel_map map;
     pa_proplist *proplist = NULL;
     const char *remote_server = NULL;
+    const char *sink_name = NULL;
 
     pa_assert(m);
 
@@ -533,7 +532,11 @@ int pa__init(pa_module*m) {
     sink_data.driver = __FILE__;
     sink_data.module = m;
 
-    pa_sink_new_data_set_name(&sink_data, pa_modargs_get_value(ma, "sink_name", DEFAULT_SINK_NAME));
+    sink_name = pa_modargs_get_value(ma, "sink_name", NULL);
+    if(!sink_name)
+        sink_name = pa_sprintf_malloc("tunnel.%s", remote_server);
+
+    pa_sink_new_data_set_name(&sink_data, sink_name);
     pa_sink_new_data_set_sample_spec(&sink_data, &ss);
     pa_sink_new_data_set_channel_map(&sink_data, &map);
 
