@@ -499,7 +499,7 @@ int pa__init(pa_module *m) {
     u = pa_xnew0(struct userdata, 1);
     u->module = m;
     m->userdata = u;
-    u->remote_server = strdup(remote_server);
+    u->remote_server = pa_xstrdup(remote_server);
     pa_memchunk_reset(&u->memchunk);
     u->thread_mainloop = pa_mainloop_new();
     if (u->thread_mainloop == NULL) {
@@ -609,7 +609,7 @@ void pa__done(pa_module *m) {
         free((void *) u->remote_sink_name);
 
     if (u->remote_server)
-        free((void *) u->remote_server);
+        pa_xfree(u->remote_server);
 
     if (u->memchunk.memblock)
         pa_memblock_unref(u->memchunk.memblock);
