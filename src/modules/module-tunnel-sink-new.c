@@ -517,7 +517,7 @@ int pa__init(pa_module*m) {
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
 
-    pa_thread_mq_init_rtmainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->rt_mainloop));
+    pa_thread_mq_init_thread_mainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->rt_mainloop));
 
     /* Create sink */
     pa_sink_new_data_init(&sink_data);
