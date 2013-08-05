@@ -88,8 +88,8 @@ struct userdata {
 
     bool connected;
 
-    const char *remote_server;
-    const char *remote_sink_name;
+    char *remote_server;
+    char *remote_sink_name;
 };
 
 static const char* const valid_modargs[] = {
@@ -475,6 +475,7 @@ int pa__init(pa_module *m) {
     pa_proplist *proplist = NULL;
     const char *remote_server = NULL;
     const char *sink_name = NULL;
+    char *default_sink_name = NULL;
 
     pa_assert(m);
 
@@ -507,7 +508,7 @@ int pa__init(pa_module *m) {
         goto fail;
     }
 
-    u->remote_sink_name = pa_modargs_get_value(ma, "sink", NULL);
+    u->remote_sink_name = pa_xstrdup(pa_modargs_get_value(ma, "sink", NULL));
 
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
@@ -519,9 +520,8 @@ int pa__init(pa_module *m) {
     sink_data.driver = __FILE__;
     sink_data.module = m;
 
-    sink_name = pa_modargs_get_value(ma, "sink_name", NULL);
-    if (!sink_name)
-        sink_name = pa_sprintf_malloc("tunnel.%s", remote_server);
+    default_sink_name = pa_sprintf_malloc("tunnel.%s", remote_server);
+    sink_name = pa_modargs_get_value(ma, "sink_name", default_sink_name);
 
     pa_sink_new_data_set_name(&sink_data, sink_name);
     pa_sink_new_data_set_sample_spec(&sink_data, &ss);
@@ -572,12 +572,16 @@ int pa__init(pa_module *m) {
 
     pa_sink_put(u->sink);
     pa_modargs_free(ma);
+    pa_xfree(default_sink_name);
 
     return 0;
 
 fail:
     if (ma)
         pa_modargs_free(ma);
+
+    if (default_sink_name)
+        pa_xfree(default_sink_name);
 
     if (proplist)
         pa_proplist_free(proplist);
@@ -606,7 +610,7 @@ void pa__done(pa_module *m) {
     pa_thread_mq_done(&u->thread_mq);
 
     if (u->remote_sink_name)
-        free((void *) u->remote_sink_name);
+        pa_xfree(u->remote_sink_name);
 
     if (u->remote_server)
         pa_xfree(u->remote_server);
