@@ -123,8 +123,8 @@ static void thread_func(void *userdata) {
 
     /* init libpulse */
     u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
-                                                  "module-tunnel-sink-new",
-                                                  proplist);
+                                              "module-tunnel-sink-new",
+                                              proplist);
     pa_proplist_free(proplist);
 
     if (!u->context) {
@@ -135,26 +135,24 @@ static void thread_func(void *userdata) {
     pa_context_set_subscribe_callback(u->context, context_subscribe_callback, u);
     pa_context_set_state_callback(u->context, context_state_callback, u);
     if (pa_context_connect(u->context,
-                          u->remote_server,
-                          PA_CONTEXT_NOFAIL | PA_CONTEXT_NOAUTOSPAWN,
-                          NULL) < 0) {
+                           u->remote_server,
+                           PA_CONTEXT_NOFAIL | PA_CONTEXT_NOAUTOSPAWN,
+                           NULL) < 0) {
         pa_log("Failed to connect libpulse context");
         goto fail;
     }
 
-    for(;;)
-    {
+    for (;;) {
         int ret;
         const void *p;
 
         size_t writeable = 0;
 
-        if(pa_mainloop_iterate(u->thread_mainloop, 1, &ret) < 0) {
-            if(ret == 0)
+        if (pa_mainloop_iterate(u->thread_mainloop, 1, &ret) < 0) {
+            if (ret == 0)
                 goto finish;
             else
                 goto fail;
-
         }
 
         if (PA_UNLIKELY(u->sink->thread_info.rewind_requested))
@@ -215,7 +213,7 @@ finish:
     if (u->context)
         pa_context_disconnect(u->context);
 
-    if(u->thread_mainloop)
+    if (u->thread_mainloop)
         pa_mainloop_free(u->thread_mainloop);
 
     pa_log_debug("Thread shutting down");
@@ -226,14 +224,14 @@ static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_
 
     pa_assert(u);
 
-    if(!i)
+    if (!i)
         return;
 
-    if(eol < 0) {
+    if (eol < 0) {
         return;
     }
 
-    if((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
+    if ((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
         u->volume = i->volume;
         pa_sink_update_volume_and_mute(u->sink);
     }
@@ -252,7 +250,7 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
             u->stream = NULL;
 
             /* TODO: think about killing the context or should we just try again a creationg of a stream ? */
-            if(u->context)
+            if (u->context)
                 pa_context_disconnect(u->context);
             break;
         case PA_STREAM_TERMINATED:
@@ -260,7 +258,7 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
             pa_stream_unref(stream);
             u->stream = NULL;
 
-            if(u->context)
+            if (u->context)
                 pa_context_disconnect(u->context);
             break;
         default:
@@ -275,9 +273,9 @@ static void context_subscribe_callback(pa_context *c, pa_subscription_event_type
 
     switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
     case PA_SUBSCRIPTION_EVENT_SINK_INPUT: {
-        if(u->stream) {
-            if((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
-                if(pa_stream_get_index(u->stream) == idx) {
+        if (u->stream) {
+            if ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
+                if (pa_stream_get_index(u->stream) == idx) {
                     pa_context_get_sink_input_info(u->context, idx, context_sink_input_info_callback, u);
                 }
             }
@@ -376,7 +374,7 @@ static void sink_get_volume_callback(pa_sink *s) {
 
     pa_assert(u);
 
-    if(!pa_cvolume_equal(&u->volume, &s->real_volume)) {
+    if (!pa_cvolume_equal(&u->volume, &s->real_volume)) {
         s->real_volume = u->volume;
         pa_cvolume_set(&s->soft_volume, s->sample_spec.channels, PA_VOLUME_NORM);
     }
@@ -385,7 +383,7 @@ static void sink_get_volume_callback(pa_sink *s) {
 static void sink_set_volume_callback(pa_sink *s) {
     struct userdata *u = s->userdata;
 
-    if(!u->stream)
+    if (!u->stream)
         return;
 
     u->volume = s->real_volume;
@@ -420,7 +418,7 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
         bufferattr.tlength = nbytes;
     }
 
-    if(PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
+    if (PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
         pa_stream_set_buffer_attr(u->stream, &bufferattr, NULL, NULL);
     }
 }
@@ -445,17 +443,17 @@ static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t of
                 return 0;
             }
 
-            if(!u->stream) {
+            if (!u->stream) {
                 *((pa_usec_t*) data) = 0;
                 return 0;
             }
 
-            if(!PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
+            if (!PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
                 *((pa_usec_t*) data) = 0;
                 return 0;
             }
 
-            if(pa_stream_get_latency(u->stream, &remote_latency, &negative) < 0) {
+            if (pa_stream_get_latency(u->stream, &remote_latency, &negative) < 0) {
                 *((pa_usec_t*) data) = 0;
                 return 0;
             }
@@ -506,7 +504,7 @@ int pa__init(pa_module *m) {
     u->remote_server = strdup(remote_server);
     pa_memchunk_reset(&u->memchunk);
     u->thread_mainloop = pa_mainloop_new();
-    if(u->thread_mainloop == NULL) {
+    if (u->thread_mainloop == NULL) {
         pa_log("Failed to create mainloop");
         goto fail;
     }
@@ -524,7 +522,7 @@ int pa__init(pa_module *m) {
     sink_data.module = m;
 
     sink_name = pa_modargs_get_value(ma, "sink_name", NULL);
-    if(!sink_name)
+    if (!sink_name)
         sink_name = pa_sprintf_malloc("tunnel.%s", remote_server);
 
     pa_sink_new_data_set_name(&sink_data, sink_name);
@@ -609,10 +607,10 @@ void pa__done(pa_module *m) {
 
     pa_thread_mq_done(&u->thread_mq);
 
-    if(u->remote_sink_name)
+    if (u->remote_sink_name)
         free((void *) u->remote_sink_name);
 
-    if(u->remote_server)
+    if (u->remote_server)
         free((void *) u->remote_server);
 
     if (u->memchunk.memblock)
