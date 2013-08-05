@@ -243,9 +243,9 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
     pa_assert(u);
     pa_assert(stream == u->stream);
 
-    switch(pa_stream_get_state(stream)) {
+    switch (pa_stream_get_state(stream)) {
         case PA_STREAM_FAILED:
-            pa_log_debug("Context failed.");
+            pa_log_debug("Stream failed.");
             pa_stream_unref(stream);
             u->stream = NULL;
 
@@ -299,12 +299,11 @@ static void context_state_callback(pa_context *c, void *userdata) {
     pa_assert(u);
     pa_assert(u->context == c);
 
-    switch(pa_context_get_state(c)) {
+    switch (pa_context_get_state(c)) {
         case PA_CONTEXT_UNCONNECTED:
         case PA_CONTEXT_CONNECTING:
         case PA_CONTEXT_AUTHORIZING:
         case PA_CONTEXT_SETTING_NAME:
-            pa_log_debug("Connection unconnected");
             break;
         case PA_CONTEXT_READY: {
             pa_proplist *proplist;
@@ -316,7 +315,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
             proplist = pa_proplist_new();
             pa_assert(proplist);
 
-
             u->stream = pa_stream_new_with_proplist(u->context,
                                                     "module-tunnel-sink-new",
                                                     &u->sink->sample_spec,
@@ -325,13 +323,12 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
             pa_proplist_free(proplist);
 
-
             memset(&bufferattr, 0, sizeof(pa_buffer_attr));
 
-            bufferattr.maxlength = (uint32_t) - 1;
-            bufferattr.minreq = (uint32_t) - 1;
-            bufferattr.prebuf = (uint32_t) - 1;
-            bufferattr.tlength = (uint32_t) - 1;
+            bufferattr.maxlength = (uint32_t) -1;
+            bufferattr.minreq = (uint32_t) -1;
+            bufferattr.prebuf = (uint32_t) -1;
+            bufferattr.tlength = (uint32_t) -1;
 
             pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SINK_INPUT, NULL, NULL);
 
@@ -354,7 +351,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
 
             pa_module_unload_request(u->module, false);
             break;
-
         case PA_CONTEXT_TERMINATED:
             c_errno = pa_context_errno(u->context);
             pa_log_debug("Context terminated.");
