@@ -59,6 +59,8 @@ PA_MODULE_USAGE(
         "channel_map=<channel map>"
         );
 
+#define TUNNEL_THREAD_FAILED_MAINLOOP 1
+
 /* libpulse callbacks */
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
@@ -76,6 +78,7 @@ struct userdata {
     pa_thread *thread;
     pa_thread_mq thread_mq;
     pa_mainloop *thread_mainloop;
+    pa_mainloop_api *thread_mainloop_api;
 
     pa_memchunk memchunk;
 
@@ -184,12 +187,13 @@ static void thread_func(void *userdata) {
 
                     /* we have new data to write */
                     p = (const uint8_t *) pa_memblock_acquire(u->memchunk.memblock);
+                    /* TODO: ZERO COPY! */
                     ret = pa_stream_write(u->stream,
-                                        ((uint8_t*) p + u->memchunk.index),         /**< The data to write */
+                                        ((uint8_t*) p + u->memchunk.index),
                                         u->memchunk.length,            /**< The length of the data to write in bytes */
                                         NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
-                                        0,          /**< Offset for seeking, must be 0 for upload streams */
-                                        PA_SEEK_RELATIVE      /**< Seek mode, must be PA_SEEK_RELATIVE for upload streams */
+                                        0,
+                                        PA_SEEK_RELATIVE
                                         );
                     pa_memblock_release(u->memchunk.memblock);
                     pa_memblock_unref(u->memchunk.memblock);
@@ -339,6 +343,12 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                                     proplist);
             pa_proplist_free(proplist);
             pa_xfree(stream_name);
+
+            if(!u->stream) {
+                pa_log_error("Could not create a stream.");
+                u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
+                return;
+            }
 
             pa_zero(bufferattr);
             bufferattr.maxlength = (uint32_t) -1;
@@ -521,6 +531,7 @@ int pa__init(pa_module *m) {
         pa_log("Failed to create mainloop");
         goto fail;
     }
+    u->thread_mainloop_api = pa_mainloop_get_api(u->thread_mainloop);
 
     u->remote_sink_name = pa_xstrdup(pa_modargs_get_value(ma, "sink", NULL));
 
