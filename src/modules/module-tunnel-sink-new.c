@@ -106,6 +106,16 @@ static const char* const valid_modargs[] = {
     NULL,
 };
 
+static pa_proplist* tunnel_new_proplist(struct userdata *u) {
+    pa_proplist *proplist = pa_proplist_new();
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, "PulseAudio");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "org.PulseAudio.PulseAudio");
+    pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
+    pa_init_proplist(proplist);
+
+    return proplist;
+}
+
 static void thread_func(void *userdata) {
     struct userdata *u = userdata;
     pa_proplist *proplist;
@@ -118,15 +128,11 @@ static void thread_func(void *userdata) {
 
     pa_thread_mq_install(&u->thread_mq);
 
-    proplist = pa_proplist_new();
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, "PulseAudio");
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, "org.PulseAudio.PulseAudio");
-    pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, PACKAGE_VERSION);
-    pa_init_proplist(proplist);
+    proplist = tunnel_new_proplist(u);
 
     /* init libpulse */
     u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
-                                              "module-tunnel-sink-new",
+                                              "PulseAudio",
                                               proplist);
     pa_proplist_free(proplist);
 
@@ -314,19 +320,25 @@ static void context_state_callback(pa_context *c, void *userdata) {
         case PA_CONTEXT_READY: {
             pa_proplist *proplist;
             pa_buffer_attr bufferattr;
+            const char *username = pa_get_user_name_malloc();
+            const char *hostname = pa_get_host_name_malloc();
+            /* TODO: old tunnel say 'Null-Output' */
+            char *stream_name = pa_sprintf_malloc("%s for %s@%s", "Tunnel", username, hostname);
 
             pa_log_debug("Connection successful. Creating stream.");
             pa_assert(!u->stream);
 
-            proplist = pa_proplist_new();
+            proplist = tunnel_new_proplist(u);
+            pa_proplist_sets(proplist, PA_PROP_MEDIA_ROLE, "sound");
             pa_assert(proplist);
 
             u->stream = pa_stream_new_with_proplist(u->context,
-                                                    "module-tunnel-sink-new",
+                                                    stream_name,
                                                     &u->sink->sample_spec,
                                                     &u->sink->channel_map,
                                                     proplist);
             pa_proplist_free(proplist);
+            pa_xfree(stream_name);
 
             pa_zero(bufferattr);
             bufferattr.maxlength = (uint32_t) -1;
@@ -522,7 +534,7 @@ int pa__init(pa_module *m) {
     sink_data.driver = __FILE__;
     sink_data.module = m;
 
-    default_sink_name = pa_sprintf_malloc("tunnel.%s", remote_server);
+    default_sink_name = pa_sprintf_malloc("tunnel-sink-new.%s", remote_server);
     sink_name = pa_modargs_get_value(ma, "sink_name", default_sink_name);
 
     pa_sink_new_data_set_name(&sink_data, sink_name);
