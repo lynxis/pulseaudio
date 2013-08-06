@@ -85,6 +85,7 @@ struct userdata {
     pa_stream *stream;
 
     /* volume is applied on the remote server - this is similiar to a hw mixer */
+    /* TODO: check if a saved volume got restored in a correct way */
     pa_cvolume volume;
 
     bool connected;
@@ -354,7 +355,7 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                            u->remote_sink_name,
                                            &bufferattr,
                                            PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
-                                           NULL,
+                                           &u->volume,
                                            NULL) < 0) {
                 /* failed */
             }
