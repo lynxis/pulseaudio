@@ -211,12 +211,10 @@ fail:
      *
      * Note: is this a race condition? When a PA_MESSAGE_SHUTDOWN already within the queue?
      */
-    pa_asyncmsgq_flush(u->thread_mq.inq, false);
     pa_asyncmsgq_post(u->thread_mq.outq, PA_MSGOBJECT(u->module->core), PA_CORE_MESSAGE_UNLOAD_MODULE, u->module, 0, NULL, NULL);
     pa_asyncmsgq_wait_for(u->thread_mq.inq, PA_MESSAGE_SHUTDOWN);
 
 finish:
-    pa_asyncmsgq_flush(u->thread_mq.inq, false);
 
     if (memchunk.memblock)
         pa_memblock_unref(memchunk.memblock);
@@ -258,7 +256,6 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
     struct userdata *u = userdata;
 
     pa_assert(u);
-    pa_assert(stream == u->stream);
 
     switch (pa_stream_get_state(stream)) {
         case PA_STREAM_FAILED:
@@ -305,7 +302,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
     int c_errno;
 
     pa_assert(u);
-    pa_assert(u->context == c);
 
     switch (pa_context_get_state(c)) {
         case PA_CONTEXT_UNCONNECTED:
