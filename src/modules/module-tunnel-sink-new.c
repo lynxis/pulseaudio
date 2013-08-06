@@ -188,9 +188,9 @@ static void thread_func(void *userdata) {
                     /* TODO: ZERO COPY! */
                     ret = pa_stream_write(u->stream,
                                         ((uint8_t*) p + memchunk.index),
-                                        memchunk.length,            /**< The length of the data to write in bytes */
+                                        memchunk.length,
                                         NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
-                                        0,
+                                        0,        /** offset */
                                         PA_SEEK_RELATIVE
                                         );
                     pa_memblock_release(memchunk.memblock);
