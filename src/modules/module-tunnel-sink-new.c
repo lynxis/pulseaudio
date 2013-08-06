@@ -80,8 +80,6 @@ struct userdata {
     pa_mainloop *thread_mainloop;
     pa_mainloop_api *thread_mainloop_api;
 
-    pa_memchunk memchunk;
-
     /* libpulse context */
     pa_context *context;
     pa_stream *stream;
@@ -122,17 +120,16 @@ static pa_proplist* tunnel_new_proplist(struct userdata *u) {
 static void thread_func(void *userdata) {
     struct userdata *u = userdata;
     pa_proplist *proplist;
+    pa_memchunk memchunk;
 
     pa_assert(u);
 
-    pa_memchunk_reset(&u->memchunk);
-
     pa_log_debug("Thread starting up");
-
     pa_thread_mq_install(&u->thread_mq);
 
-    proplist = tunnel_new_proplist(u);
+    pa_memchunk_reset(&memchunk);
 
+    proplist = tunnel_new_proplist(u);
     /* init libpulse */
     u->context = pa_context_new_with_proplist(pa_mainloop_get_api(u->thread_mainloop),
                                               "PulseAudio",
@@ -180,24 +177,24 @@ static void thread_func(void *userdata) {
             } else {
                 writable = pa_stream_writable_size(u->stream);
                 if (writable > 0) {
-                    if (u->memchunk.length <= 0)
-                        pa_sink_render(u->sink, writable, &u->memchunk);
+                    if (memchunk.length <= 0)
+                        pa_sink_render(u->sink, writable, &memchunk);
 
-                    pa_assert(u->memchunk.length > 0);
+                    pa_assert(memchunk.length > 0);
 
                     /* we have new data to write */
-                    p = (const uint8_t *) pa_memblock_acquire(u->memchunk.memblock);
+                    p = (const uint8_t *) pa_memblock_acquire(memchunk.memblock);
                     /* TODO: ZERO COPY! */
                     ret = pa_stream_write(u->stream,
-                                        ((uint8_t*) p + u->memchunk.index),
-                                        u->memchunk.length,            /**< The length of the data to write in bytes */
+                                        ((uint8_t*) p + memchunk.index),
+                                        memchunk.length,            /**< The length of the data to write in bytes */
                                         NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
                                         0,
                                         PA_SEEK_RELATIVE
                                         );
-                    pa_memblock_release(u->memchunk.memblock);
-                    pa_memblock_unref(u->memchunk.memblock);
-                    pa_memchunk_reset(&u->memchunk);
+                    pa_memblock_release(memchunk.memblock);
+                    pa_memblock_unref(memchunk.memblock);
+                    pa_memchunk_reset(&memchunk);
 
                     if (ret != 0) {
                         /* TODO: we should consider a state change or is that already done ? */
@@ -220,8 +217,8 @@ fail:
 finish:
     pa_asyncmsgq_flush(u->thread_mq.inq, false);
 
-    if (u->memchunk.memblock)
-        pa_memblock_unref(u->memchunk.memblock);
+    if (memchunk.memblock)
+        pa_memblock_unref(memchunk.memblock);
 
     if (u->stream)
         pa_stream_disconnect(u->stream);
