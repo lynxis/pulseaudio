@@ -87,6 +87,7 @@ struct userdata {
     /* volume is applied on the remote server - this is similiar to a hw mixer */
     /* TODO: check if a saved volume got restored in a correct way */
     pa_cvolume volume;
+    pa_buffer_attr bufferattr;
 
     bool connected;
 
@@ -311,7 +312,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
             break;
         case PA_CONTEXT_READY: {
             pa_proplist *proplist;
-            pa_buffer_attr bufferattr;
             const char *username = pa_get_user_name_malloc();
             const char *hostname = pa_get_host_name_malloc();
             /* TODO: old tunnel say 'Null-Output' */
@@ -338,18 +338,13 @@ static void context_state_callback(pa_context *c, void *userdata) {
                 return;
             }
 
-            pa_zero(bufferattr);
-            bufferattr.maxlength = (uint32_t) -1;
-            bufferattr.minreq = (uint32_t) -1;
-            bufferattr.prebuf = (uint32_t) -1;
-            bufferattr.tlength = (uint32_t) -1;
 
             pa_context_subscribe(u->context, PA_SUBSCRIPTION_MASK_SINK_INPUT, NULL, NULL);
 
             pa_stream_set_state_callback(u->stream, stream_state_callback, userdata);
             if (pa_stream_connect_playback(u->stream,
                                            u->remote_sink_name,
-                                           &bufferattr,
+                                           &u->bufferattr,
                                            PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
                                            &u->volume,
                                            NULL) < 0) {
@@ -400,17 +395,11 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
     struct userdata *u;
     size_t nbytes;
     pa_usec_t block_usec;
-    pa_buffer_attr bufferattr;
 
     pa_sink_assert_ref(s);
     pa_assert_se(u = s->userdata);
 
     block_usec = pa_sink_get_requested_latency_within_thread(s);
-
-    bufferattr.maxlength = (uint32_t) - 1;
-    bufferattr.minreq = (uint32_t) - 1;
-    bufferattr.prebuf = (uint32_t) - 1;
-    bufferattr.tlength = (uint32_t) - 1;
 
     if (block_usec == (pa_usec_t) -1)
         block_usec = s->thread_info.max_latency;
@@ -420,11 +409,11 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
     pa_sink_set_max_request_within_thread(s, nbytes);
 
     if (block_usec != (pa_usec_t) -1) {
-        bufferattr.tlength = nbytes;
+        u->bufferattr.tlength = nbytes;
     }
 
-    if (PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
-        pa_stream_set_buffer_attr(u->stream, &bufferattr, NULL, NULL);
+    if (u->stream && PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
+        pa_stream_set_buffer_attr(u->stream, &u->bufferattr, NULL, NULL);
     }
 }
 
@@ -518,6 +507,11 @@ int pa__init(pa_module *m) {
 
     pa_cvolume_init(&u->volume);
     pa_cvolume_reset(&u->volume, ss.channels);
+
+    u->bufferattr.maxlength = (uint32_t) -1;
+    u->bufferattr.minreq = (uint32_t) -1;
+    u->bufferattr.prebuf = (uint32_t) -1;
+    u->bufferattr.tlength = (uint32_t) -1;
 
     pa_thread_mq_init_thread_mainloop(&u->thread_mq, m->core->mainloop, pa_mainloop_get_api(u->thread_mainloop));
 
