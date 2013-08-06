@@ -220,14 +220,17 @@ finish:
     if (memchunk.memblock)
         pa_memblock_unref(memchunk.memblock);
 
-    if (u->stream)
+    if (u->stream) {
         pa_stream_disconnect(u->stream);
+        pa_stream_unref(u->stream);
+        u->stream = NULL;
+    }
 
-    if (u->context)
+    if (u->context) {
         pa_context_disconnect(u->context);
-
-    if (u->thread_mainloop)
-        pa_mainloop_free(u->thread_mainloop);
+        pa_context_unref(u->context);
+        u->context = NULL;
+    }
 
     pa_log_debug("Thread shutting down");
 }
@@ -258,21 +261,12 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
 
     switch (pa_stream_get_state(stream)) {
         case PA_STREAM_FAILED:
-            pa_log_debug("Stream failed.");
-            pa_stream_unref(stream);
-            u->stream = NULL;
-
-            /* TODO: think about killing the context or should we just try again a creationg of a stream ? */
-            if (u->context)
-                pa_context_disconnect(u->context);
+            pa_log_error("Stream failed.");
+            u->connected = false;
+            u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             break;
         case PA_STREAM_TERMINATED:
-            pa_log_debug("Context terminated.");
-            pa_stream_unref(stream);
-            u->stream = NULL;
-
-            if (u->context)
-                pa_context_disconnect(u->context);
+            pa_log_debug("Stream terminated.");
             break;
         default:
             break;
@@ -369,21 +363,14 @@ static void context_state_callback(pa_context *c, void *userdata) {
         }
         case PA_CONTEXT_FAILED:
             c_errno = pa_context_errno(u->context);
-            pa_log_debug("Context failed.");
+            pa_log_debug("Context failed with err %d.", c_errno);
             u->connected = false;
-            pa_context_unref(u->context);
-            u->context = NULL;
-
-            pa_module_unload_request(u->module, false);
+            u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             break;
         case PA_CONTEXT_TERMINATED:
-            c_errno = pa_context_errno(u->context);
             pa_log_debug("Context terminated.");
             u->connected = false;
-            pa_context_unref(u->context);
-            u->context = NULL;
-
-            pa_module_unload_request(u->module, false);
+            u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             break;
         default:
             break;
@@ -629,6 +616,9 @@ void pa__done(pa_module *m) {
     }
 
     pa_thread_mq_done(&u->thread_mq);
+
+    if (u->thread_mainloop)
+        pa_mainloop_free(u->thread_mainloop);
 
     if (u->remote_sink_name)
         pa_xfree(u->remote_sink_name);
