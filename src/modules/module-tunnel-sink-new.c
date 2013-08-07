@@ -64,13 +64,7 @@ PA_MODULE_USAGE(
 /* libpulse callbacks */
 static void stream_state_callback(pa_stream *stream, void *userdata);
 static void context_state_callback(pa_context *c, void *userdata);
-static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
-static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata);
-/* used for calls we ignore the response */
-static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
-
 static void sink_update_requested_latency_cb(pa_sink *s);
-static void sink_write_volume_callback(pa_sink *sink);
 
 struct userdata {
     pa_module *module;
@@ -84,9 +78,6 @@ struct userdata {
     pa_context *context;
     pa_stream *stream;
 
-    /* volume is applied on the remote server - this is similiar to a hw mixer */
-    /* TODO: check if a saved volume got restored in a correct way */
-    pa_cvolume volume;
     pa_buffer_attr bufferattr;
 
     bool connected;
@@ -143,7 +134,6 @@ static void thread_func(void *userdata) {
         goto fail;
     }
 
-    pa_context_set_subscribe_callback(u->context, context_subscribe_callback, u);
     pa_context_set_state_callback(u->context, context_state_callback, u);
     if (pa_context_connect(u->context,
                            u->remote_server,
@@ -235,24 +225,6 @@ finish:
     pa_log_debug("Thread shutting down");
 }
 
-static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
-    struct userdata *u = userdata;
-
-    pa_assert(u);
-
-    if (!i)
-        return;
-
-    if (eol < 0) {
-        return;
-    }
-
-    if ((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
-        u->volume = i->volume;
-        pa_sink_update_volume_and_mute(u->sink);
-    }
-}
-
 static void stream_state_callback(pa_stream *stream, void *userdata) {
     struct userdata *u = userdata;
 
@@ -270,32 +242,6 @@ static void stream_state_callback(pa_stream *stream, void *userdata) {
         default:
             break;
     }
-}
-
-static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
-    struct userdata *u = userdata;
-
-    pa_assert(userdata);
-
-    switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
-    case PA_SUBSCRIPTION_EVENT_SINK_INPUT: {
-        if (u->stream) {
-            if ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
-                if (pa_stream_get_index(u->stream) == idx) {
-                    pa_context_get_sink_input_info(u->context, idx, context_sink_input_info_callback, u);
-                }
-            }
-        }
-        break;
-    }
-    default:
-        /* ignoring event */
-        break;
-    }
-}
-
-/* active ignoring */
-static void context_ignore_success_callback(pa_context *c, int success, void *userdata) {
 }
 
 static void context_state_callback(pa_context *c, void *userdata) {
@@ -346,9 +292,9 @@ static void context_state_callback(pa_context *c, void *userdata) {
                                            u->remote_sink_name,
                                            &u->bufferattr,
                                            PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
-                                           &u->volume,
+                                           NULL,
                                            NULL) < 0) {
-                /* failed */
+                /* TODO fail */
             }
             u->connected = true;
             break;
@@ -367,28 +313,6 @@ static void context_state_callback(pa_context *c, void *userdata) {
         default:
             break;
     }
-}
-
-static void sink_get_volume_callback(pa_sink *s) {
-    struct userdata *u = s->userdata;
-
-    pa_assert(u);
-
-    if (!pa_cvolume_equal(&u->volume, &s->real_volume)) {
-        s->real_volume = u->volume;
-        pa_cvolume_set(&s->soft_volume, s->sample_spec.channels, PA_VOLUME_NORM);
-    }
-}
-
-static void sink_set_volume_callback(pa_sink *s) {
-    struct userdata *u = s->userdata;
-
-    if (!u->stream)
-        return;
-
-    u->volume = s->real_volume;
-
-    pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
 }
 
 static void sink_update_requested_latency_cb(pa_sink *s) {
@@ -415,13 +339,6 @@ static void sink_update_requested_latency_cb(pa_sink *s) {
     if (u->stream && PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream))) {
         pa_stream_set_buffer_attr(u->stream, &u->bufferattr, NULL, NULL);
     }
-}
-
-static void sink_write_volume_callback(pa_sink *s) {
-    struct userdata *u = s->userdata;
-    pa_cvolume hw_vol = s->thread_info.current_hw_volume;
-
-    pa_assert(u);
 }
 
 static int sink_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t offset, pa_memchunk *chunk) {
@@ -505,9 +422,6 @@ int pa__init(pa_module *m) {
 
     u->remote_sink_name = pa_xstrdup(pa_modargs_get_value(ma, "sink", NULL));
 
-    pa_cvolume_init(&u->volume);
-    pa_cvolume_reset(&u->volume, ss.channels);
-
     u->bufferattr.maxlength = (uint32_t) -1;
     u->bufferattr.minreq = (uint32_t) -1;
     u->bufferattr.prebuf = (uint32_t) -1;
@@ -555,17 +469,6 @@ int pa__init(pa_module *m) {
 
     /* set thread queue */
     pa_sink_set_asyncmsgq(u->sink, u->thread_mq.inq);
-
-    pa_sink_set_get_volume_callback(u->sink, sink_get_volume_callback);
-    pa_sink_set_set_volume_callback(u->sink, sink_set_volume_callback);
-    pa_sink_set_write_volume_callback(u->sink, sink_write_volume_callback);
-    /* TODO: latency / rewind
-    u->sink->update_requested_latency = sink_update_requested_latency_cb;
-    u->block_usec = BLOCK_USEC;
-    nbytes = pa_usec_to_bytes(u->block_usec, &u->sink->sample_spec);
-    pa_sink_set_max_rewind(u->sink, nbytes);
-    pa_sink_set_max_request(u->sink, nbytes);
-    pa_sink_set_latency_range(u->sink, 0, BLOCK_USEC); */
 
     if (!(u->thread = pa_thread_new("tunnel-sink", thread_func, u))) {
         pa_log("Failed to create thread.");
