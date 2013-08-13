@@ -280,6 +280,15 @@ void pa_context_rttime_restart(pa_context *c, pa_time_event *e, pa_usec_t usec);
  * pa_stream_get_sample_spec(ss)); \since 0.9.20 */
 size_t pa_context_get_tile_size(pa_context *c, const pa_sample_spec *ss);
 
+/** Set the authentication cookie. \since 5.0 */
+int pa_context_set_cookie(pa_context *c, uint8_t *cookie, size_t cookie_size);
+
+/** Load the authentication cookie from a hexdecimal string \since 5.0 */
+int pa_context_load_cookie_from_hex(pa_context *c, const char *cookie);
+
+/** Load the authentication cookie from a file \since 5.0 */
+int pa_context_load_cookie_from_file(pa_context *c, const char *cookie_file_path);
+
 PA_C_DECL_END
 
 #endif
