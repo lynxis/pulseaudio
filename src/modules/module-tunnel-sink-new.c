@@ -65,6 +65,7 @@ PA_MODULE_USAGE(
 static void stream_state_cb(pa_stream *stream, void *userdata);
 static void stream_changed_buffer_attr_cb(pa_stream *stream, void *userdata);
 static void stream_set_buffer_attr_cb(pa_stream *stream, int success, void *userdata);
+static void stream_write_cb(pa_stream *s, size_t nbytes, void *userdata);
 static void context_state_cb(pa_context *c, void *userdata);
 static void sink_update_requested_latency_cb(pa_sink *s);
 
@@ -82,6 +83,7 @@ struct userdata {
     bool update_stream_bufferattr_after_connect;
 
     bool connected;
+    bool new_data;
 
     char *cookie_file;
     char *remote_server;
@@ -120,6 +122,52 @@ static pa_proplist* tunnel_new_proplist(struct userdata *u) {
     pa_init_proplist(proplist);
 
     return proplist;
+}
+
+static void write_new_samples(struct userdata *u) {
+    u->new_data = false;
+    if (u->connected &&
+            pa_stream_get_state(u->stream) == PA_STREAM_READY &&
+            PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
+        /* TODO: Cork the stream when the sink is suspended. */
+
+        if (pa_stream_is_corked(u->stream)) {
+            pa_operation *operation;
+            if ((operation = pa_stream_cork(u->stream, 0, NULL, NULL)))
+                pa_operation_unref(operation);
+            u->new_data = true;
+        } else {
+            size_t writable;
+
+            writable = pa_stream_writable_size(u->stream);
+            if (writable > 0) {
+                pa_memchunk memchunk;
+                const void *p;
+                int ret = -1;
+
+                pa_sink_render_full(u->sink, writable, &memchunk);
+
+                pa_assert(memchunk.length > 0);
+
+                /* we have new data to write */
+                p = pa_memblock_acquire(memchunk.memblock);
+                /* TODO: Use pa_stream_begin_write() to reduce copying. */
+                ret = pa_stream_write(u->stream,
+                                      (uint8_t*) p + memchunk.index,
+                                      memchunk.length,
+                                      NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
+                                      0,        /** offset */
+                                      PA_SEEK_RELATIVE);
+                pa_memblock_release(memchunk.memblock);
+                pa_memblock_unref(memchunk.memblock);
+
+                if (ret != 0) {
+                    pa_log_error("Could not write data into the stream ... ret = %i", ret);
+                    u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
+                }
+            }
+        }
+    }
 }
 
 static void thread_func(void *userdata) {
@@ -163,49 +211,13 @@ static void thread_func(void *userdata) {
                 goto fail;
         }
 
-        if (PA_UNLIKELY(u->sink->thread_info.rewind_requested))
+        if (PA_UNLIKELY(u->sink->thread_info.rewind_requested)) {
             pa_sink_process_rewind(u->sink, 0);
-
-        if (u->connected &&
-                pa_stream_get_state(u->stream) == PA_STREAM_READY &&
-                PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
-            /* TODO: Cork the stream when the sink is suspended. */
-
-            if (pa_stream_is_corked(u->stream)) {
-                pa_operation *operation;
-                if ((operation = pa_stream_cork(u->stream, 0, NULL, NULL)))
-                    pa_operation_unref(operation);
-            } else {
-                size_t writable;
-
-                writable = pa_stream_writable_size(u->stream);
-                if (writable > 0) {
-                    pa_memchunk memchunk;
-                    const void *p;
-
-                    pa_sink_render_full(u->sink, writable, &memchunk);
-
-                    pa_assert(memchunk.length > 0);
-
-                    /* we have new data to write */
-                    p = pa_memblock_acquire(memchunk.memblock);
-                    /* TODO: Use pa_stream_begin_write() to reduce copying. */
-                    ret = pa_stream_write(u->stream,
-                                          (uint8_t*) p + memchunk.index,
-                                          memchunk.length,
-                                          NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
-                                          0,        /** offset */
-                                          PA_SEEK_RELATIVE);
-                    pa_memblock_release(memchunk.memblock);
-                    pa_memblock_unref(memchunk.memblock);
-
-                    if (ret != 0) {
-                        pa_log_error("Could not write data into the stream ... ret = %i", ret);
-                        u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
-                    }
-                }
-            }
+            write_new_samples(u);
+        } else if (u->new_data) {
+            write_new_samples(u);
         }
+
     }
 fail:
     pa_asyncmsgq_post(u->thread_mq.outq, PA_MSGOBJECT(u->module->core), PA_CORE_MESSAGE_UNLOAD_MODULE, u->module, 0, NULL, NULL);
@@ -270,6 +282,11 @@ static void stream_set_buffer_attr_cb(pa_stream *stream, int success, void *user
     stream_changed_buffer_attr_cb(stream, userdata);
 }
 
+static void stream_write_cb(pa_stream *s, size_t nbytes, void *userdata) {
+    struct userdata *u = userdata;
+    u->new_data = true;
+}
+
 static void context_state_cb(pa_context *c, void *userdata) {
     struct userdata *u = userdata;
     pa_assert(u);
@@ -316,6 +333,7 @@ static void context_state_cb(pa_context *c, void *userdata) {
 
             pa_stream_set_state_callback(u->stream, stream_state_cb, userdata);
             pa_stream_set_buffer_attr_callback(u->stream, stream_changed_buffer_attr_cb, userdata);
+            pa_stream_set_write_callback(u->stream, stream_write_cb, userdata);
             if (pa_stream_connect_playback(u->stream,
                                            u->remote_sink_name,
                                            &bufferattr,
