@@ -125,7 +125,11 @@ static pa_proplist* tunnel_new_proplist(struct userdata *u) {
 }
 
 static void write_new_samples(struct userdata *u) {
-    u->new_data = false;
+    size_t writable;
+
+    pa_assert(u);
+
+
     if (u->connected &&
             pa_stream_get_state(u->stream) == PA_STREAM_READY &&
             PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
@@ -135,36 +139,34 @@ static void write_new_samples(struct userdata *u) {
             pa_operation *operation;
             if ((operation = pa_stream_cork(u->stream, 0, NULL, NULL)))
                 pa_operation_unref(operation);
-            u->new_data = true;
-        } else {
-            size_t writable;
+        }
 
-            writable = pa_stream_writable_size(u->stream);
-            if (writable > 0) {
-                pa_memchunk memchunk;
-                const void *p;
-                int ret = -1;
+        u->new_data = false;
+        writable = pa_stream_writable_size(u->stream);
+        if (writable > 0) {
+            pa_memchunk memchunk;
+            const void *p;
+            int ret = -1;
 
-                pa_sink_render_full(u->sink, writable, &memchunk);
+            pa_sink_render_full(u->sink, writable, &memchunk);
 
-                pa_assert(memchunk.length > 0);
+            pa_assert(memchunk.length > 0);
 
-                /* we have new data to write */
-                p = pa_memblock_acquire(memchunk.memblock);
-                /* TODO: Use pa_stream_begin_write() to reduce copying. */
-                ret = pa_stream_write(u->stream,
-                                      (uint8_t*) p + memchunk.index,
-                                      memchunk.length,
-                                      NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
-                                      0,        /** offset */
-                                      PA_SEEK_RELATIVE);
-                pa_memblock_release(memchunk.memblock);
-                pa_memblock_unref(memchunk.memblock);
+            /* we have new data to write */
+            p = pa_memblock_acquire(memchunk.memblock);
+            /* TODO: Use pa_stream_begin_write() to reduce copying. */
+            ret = pa_stream_write(u->stream,
+                                  (uint8_t*) p + memchunk.index,
+                                  memchunk.length,
+                                  NULL,     /**< A cleanup routine for the data or NULL to request an internal copy */
+                                  0,        /** offset */
+                                  PA_SEEK_RELATIVE);
+            pa_memblock_release(memchunk.memblock);
+            pa_memblock_unref(memchunk.memblock);
 
-                if (ret != 0) {
-                    pa_log_error("Could not write data into the stream ... ret = %i", ret);
-                    u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
-                }
+            if (ret != 0) {
+                pa_log_error("Could not write data into the stream ... ret = %i", ret);
+                u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             }
         }
     }
