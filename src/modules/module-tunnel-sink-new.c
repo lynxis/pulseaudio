@@ -128,8 +128,7 @@ static void write_new_samples(struct userdata *u) {
     size_t writable;
 
     pa_assert(u);
-
-
+    pa_log_error("Called");
     if (u->connected &&
             pa_stream_get_state(u->stream) == PA_STREAM_READY &&
             PA_SINK_IS_LINKED(u->sink->thread_info.state)) {
@@ -137,17 +136,18 @@ static void write_new_samples(struct userdata *u) {
 
         if (pa_stream_is_corked(u->stream)) {
             pa_operation *operation;
+            pa_log_debug("Uncorking");
             if ((operation = pa_stream_cork(u->stream, 0, NULL, NULL)))
                 pa_operation_unref(operation);
         }
 
-        u->new_data = false;
         writable = pa_stream_writable_size(u->stream);
         if (writable > 0) {
             pa_memchunk memchunk;
             const void *p;
             int ret = -1;
 
+            u->new_data = false;
             pa_sink_render_full(u->sink, writable, &memchunk);
 
             pa_assert(memchunk.length > 0);
@@ -168,7 +168,18 @@ static void write_new_samples(struct userdata *u) {
                 pa_log_error("Could not write data into the stream ... ret = %i", ret);
                 u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             }
+        } else {
+            pa_log_error("No writable data available");
         }
+    } else {
+        if (!u->connected)
+            pa_log_error("Module/Stream is not connected");
+        else if (!pa_stream_get_state(u->stream) == PA_STREAM_READY)
+            pa_log_error("Stream state is != READY: %d", pa_stream_get_state(u->stream));
+        else if (!PA_SINK_IS_LINKED(u->sink->thread_info.state))
+            pa_log_error("Sink is not linked: %d", u->sink->thread_info.state);
+        else
+            pa_log_error("I'm confused something changed?");
     }
 }
 
@@ -287,6 +298,7 @@ static void stream_set_buffer_attr_cb(pa_stream *stream, int success, void *user
 static void stream_write_cb(pa_stream *s, size_t nbytes, void *userdata) {
     struct userdata *u = userdata;
     u->new_data = true;
+    pa_log_error("write callback called");
 }
 
 static void context_state_cb(pa_context *c, void *userdata) {
