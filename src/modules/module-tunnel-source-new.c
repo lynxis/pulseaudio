@@ -99,6 +99,13 @@ static const char* const valid_modargs[] = {
     NULL,
 };
 
+static void cork_stream(struct userdata *u, int cork) {
+    pa_operation *operation;
+    if ((operation = pa_stream_cork(u->stream, cork, NULL, NULL))) {
+        pa_operation_unref(operation);
+    }
+}
+
 static void reset_bufferattr(pa_buffer_attr *bufferattr) {
     pa_assert(bufferattr);
     bufferattr->fragsize = (uint32_t) -1;
@@ -318,7 +325,7 @@ static void context_state_cb(pa_context *c, void *userdata) {
             if (pa_stream_connect_record(u->stream,
                                          u->remote_source_name,
                                          &bufferattr,
-                                         PA_STREAM_INTERPOLATE_TIMING|PA_STREAM_DONT_MOVE|PA_STREAM_AUTO_TIMING_UPDATE) < 0) {
+                                         PA_STREAM_INTERPOLATE_TIMING|PA_STREAM_DONT_MOVE|PA_STREAM_AUTO_TIMING_UPDATE|PA_STREAM_START_CORKED) < 0) {
                 pa_log_debug("Could not create stream: %s", pa_strerror(pa_context_errno(u->context)));
                 u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
             }
@@ -364,6 +371,10 @@ static void source_update_requested_latency_cb(pa_source *s) {
                 bufferattr.fragsize = nbytes;
                 if ((operation = pa_stream_set_buffer_attr(u->stream, &bufferattr, NULL, NULL)))
                     pa_operation_unref(operation);
+
+                if (PA_SOURCE_IS_OPENED(u->source->thread_info.state)) {
+                    cork_stream(u, 0);
+                }
                 break;
             case PA_STREAM_CREATING:
                 /* we have to delay our request until stream is ready */
@@ -410,7 +421,26 @@ static int source_process_msg_cb(pa_msgobject *o, int code, void *data, int64_t 
 
             return 0;
         }
-    }
+        case PA_SOURCE_MESSAGE_SET_STATE:
+            if (!u->stream || !PA_STREAM_IS_GOOD(pa_stream_get_state(u->stream)))
+                break;
+
+            switch ((pa_source_state_t) PA_PTR_TO_UINT(data)) {
+                case PA_SOURCE_SUSPENDED: {
+                    cork_stream(u, 1);
+                    break;
+                }
+                case PA_SOURCE_IDLE:
+                case PA_SOURCE_RUNNING: {
+                    cork_stream(u, 0);
+                    break;
+                }
+                case PA_SOURCE_INVALID_STATE:
+                case PA_SOURCE_INIT:
+                case PA_SOURCE_UNLINKED:
+                    break;
+            }
+        }
     return pa_source_process_msg(o, code, data, offset, chunk);
 }
 
