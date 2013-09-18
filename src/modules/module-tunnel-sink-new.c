@@ -66,7 +66,13 @@ static void stream_state_cb(pa_stream *stream, void *userdata);
 static void stream_changed_buffer_attr_cb(pa_stream *stream, void *userdata);
 static void stream_set_buffer_attr_cb(pa_stream *stream, int success, void *userdata);
 static void context_state_cb(pa_context *c, void *userdata);
+static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
+static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata);
+/* used for calls we ignore the response */
+static void context_ignore_success_callback(pa_context *c, int success, void *userdata);
 static void sink_update_requested_latency_cb(pa_sink *s);
+static void sink_write_volume_callback(pa_sink *sink);
+
 
 struct userdata {
     pa_module *module;
@@ -79,8 +85,11 @@ struct userdata {
     pa_context *context;
     pa_stream *stream;
 
-    bool update_stream_bufferattr_after_connect;
+    /* volume is applied on the remote server - this is similiar to a hw mixer */
+    /* TODO: check if a saved volume got restored in a correct way */
+    pa_cvolume volume;
 
+    bool update_stream_bufferattr_after_connect;
     bool connected;
 
     char *cookie_file;
@@ -157,6 +166,7 @@ static void thread_func(void *userdata) {
         goto fail;
     }
 
+    pa_context_set_subscribe_callback(u->context, context_subscribe_callback, u);
     pa_context_set_state_callback(u->context, context_state_cb, u);
     if (pa_context_connect(u->context,
                            u->remote_server,
@@ -337,7 +347,7 @@ static void context_state_cb(pa_context *c, void *userdata) {
                                            u->remote_sink_name,
                                            &bufferattr,
                                            PA_STREAM_INTERPOLATE_TIMING | PA_STREAM_DONT_MOVE | PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE,
-                                           NULL,
+                                           &u->volume,
                                            NULL) < 0) {
                 pa_log_error("Could not connect stream.");
                 u->thread_mainloop_api->quit(u->thread_mainloop_api, TUNNEL_THREAD_FAILED_MAINLOOP);
@@ -357,6 +367,80 @@ static void context_state_cb(pa_context *c, void *userdata) {
             break;
     }
 }
+
+static void context_sink_input_info_callback(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+    struct userdata *u = userdata;
+
+    pa_assert(u);
+
+    if (!i)
+        return;
+
+    if (eol < 0) {
+        return;
+    }
+
+    if ((pa_context_get_server_protocol_version(c) < 20) || (i->has_volume)) {
+        u->volume = i->volume;
+        pa_sink_update_volume_and_mute(u->sink);
+    }
+}
+
+static void context_subscribe_callback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
+    struct userdata *u = userdata;
+
+    pa_assert(userdata);
+
+    switch (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) {
+    case PA_SUBSCRIPTION_EVENT_SINK_INPUT: {
+        if (u->stream) {
+            if ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_CHANGE) {
+                if (pa_stream_get_index(u->stream) == idx) {
+                    pa_context_get_sink_input_info(u->context, idx, context_sink_input_info_callback, u);
+                }
+            }
+        }
+        break;
+    }
+    default:
+        /* ignoring event */
+        break;
+    }
+}
+
+/* active ignoring */
+static void context_ignore_success_callback(pa_context *c, int success, void *userdata) {
+}
+
+static void sink_get_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+
+    pa_assert(u);
+
+    if (!pa_cvolume_equal(&u->volume, &s->real_volume)) {
+        s->real_volume = u->volume;
+        pa_cvolume_set(&s->soft_volume, s->sample_spec.channels, PA_VOLUME_NORM);
+    }
+}
+
+static void sink_set_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+
+    if (!u->stream)
+        return;
+
+    u->volume = s->real_volume;
+
+    pa_context_set_sink_input_volume(u->context, pa_stream_get_index(u->stream), &u->volume, context_ignore_success_callback, NULL);
+}
+
+static void sink_write_volume_callback(pa_sink *s) {
+    struct userdata *u = s->userdata;
+    pa_cvolume hw_vol = s->thread_info.current_hw_volume;
+
+    pa_assert(u);
+}
+
 
 static void sink_update_requested_latency_cb(pa_sink *s) {
     struct userdata *u;
